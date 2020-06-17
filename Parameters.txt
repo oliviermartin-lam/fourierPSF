@@ -1,0 +1,32 @@
+%%% ATMOSPHERE %%%
+r0 ; 0.16 ; [m]
+L0 ; 10 ; 
+weights ; 12 ; 
+heights ; 12 ; 
+wvl ; 500 ; [nm]
+wSpeed ; 12 ; 
+wDir ; 12 ; 
+
+%%% TELESCOPE %%%
+D ; 8 ; 
+elevation ; 0 ; 
+obsRatio ; 0.14 ; 
+resolution ; 60 ; 
+path_pupil ; 'vlt_pup_240.fits' ; [fichier.fits]
+
+%%% SOURCE %%%
+wvl ; 1650 ; [nm]
+magnitude ; 12 ; 
+zenith ; 0 ; 
+azimuth ; 0 ; 
+height ; 0 ; 
+
+%%% AO %%%
+nActuator ; 21 ; 
+noiseVariance ; 0.0001 ; 
+loopGain ; 0.5 ; 
+samplingTime ; 1 ; [ms]
+latency ; 1 ; [ms]
+resAO ; 41 ; 
+psInMas ; 10 ; 
+fovInArcsec ; 3 ; 
