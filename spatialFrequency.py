@@ -403,7 +403,7 @@ class spatialFrequency:
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
         else:
-            A = np.ones(kx.shape)
+            A = np.zeros(kx.shape)
         
         Wphi       = self.atm.spectrum(np.hypot(kx,ky))   
         psd[index] = A[index]*Wphi[index]
