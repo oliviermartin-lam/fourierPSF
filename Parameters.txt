@@ -1,32 +1,51 @@
 %%% ATMOSPHERE %%%
 r0 ; 0.16 ; [m]
-L0 ; 10 ; 
-weights ; 12 ; 
-heights ; 12 ; 
+L0 ; 10 ; [m]
+weights ; 0.5 ; 0.2 ; 0.1 ; [N]
+heights ; 500. ; 4000 ; 10000 ; [m]
 wvl ; 500 ; [nm]
-wSpeed ; 12 ; 
-wDir ; 12 ; 
+wSpeed ; 5. ; 10. ; 15. ; [m/s]
+wDir ; 0. ; 30 ; 60. ; [angle]
 
 %%% TELESCOPE %%%
-D ; 8 ; 
-elevation ; 0 ; 
-obsRatio ; 0.14 ; 
-resolution ; 60 ; 
-path_pupil ; 'vlt_pup_240.fits' ; [fichier.fits]
-
-%%% SOURCE %%%
-wvl ; 1650 ; [nm]
-magnitude ; 12 ; 
-zenith ; 0 ; 
-azimuth ; 0 ; 
-height ; 0 ; 
+D ; 8 ; [m]
+zenith_angle ; 0 ; [degrees]
+obsRatio ; 0.14 ; [rate %]
+resolution ; 240 ; [number of pixels]
+path_pupil ; vlt_pup_240.fits ; [fichier.fits] ; 
 
 %%% AO %%%
-nActuator ; 21 ; 
+nActuator ; 21 ; [number of actuator in the deformable mirror]
 noiseVariance ; 0.0001 ; 
-loopGain ; 0.5 ; 
+loopGain ; 1 ; 
 samplingTime ; 1 ; [ms]
 latency ; 1 ; [ms]
 resAO ; 41 ; 
 psInMas ; 10 ; 
-fovInArcsec ; 3 ; 
+fovInArcsec ; 3 ; [field of view in arcseconds]
+
+%%% RECONSTRUCTOR %%%
+nGs ; 1 ; 
+
+%%% SCIENTIFIC SOURCE %%%
+wvl ; 1650 ; [nm]
+#magnitude ; 12 ; [zero point Vega]
+zenith ; 0 ; [arcseconds]
+azimuth ; 0 ; [arcseconds]
+#height ; 0 ; [m (0 if infinite)]
+
+%%% GUIDE STAR 1 %%%
+wvl ; 1650 ; [nm]
+#magnitude ; 12 ; [zero point Vega]
+zenith ; 20 ; [arcseconds]
+azimuth ; 0 ; [arcseconds]
+height ; 0 ; [m (0 if infinite)]
+
+%%% GUIDE STAR 2 %%%
+wvl ; 1650 ; [nm]
+#magnitude ; 12 ; [zero point Vega]
+zenith ; 20 ; [arcseconds]
+azimuth ; 0 ; [arcseconds]
+height ; 0 ; [m (0 if infinite)]
+
+

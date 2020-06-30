@@ -7,6 +7,9 @@ Created on Thu Aug 16 16:34:02 2018
 """
 import numpy as np
 from astropy.io import fits
+import matplotlib.pyplot as plt
+import re
+import FourierUtils
 
 import sys
 
@@ -50,7 +53,7 @@ class telescope:
         return 1/np.cos(self.zenith_angle*np.pi/180)
     
     # CONSTRUCTOR
-    def __init__(self,D,zenith_angle,obsRatio,resolution,file = [],verbose=True):
+    def __init__(self,D,zenith_angle,obsRatio,resolution,file = [],obj=[],verbose=True):
         
         # PARSING INPUTS
         self.D         = D          # in meter
@@ -61,22 +64,23 @@ class telescope:
         self.file      = file
         # PUPIL DEFINITION
         if file != []:
-            obj = fits.open(file)
-            im = obj[0].data
-            hdr = obj[0].header
-            self.pupil = im
-            obj.close()
-            if hdr[3]!=resolution:
-                resize = True
-            else:
-                resize = False
+            self.verb = True
+            if re.search(".fits",file)!=None:
+                obj = fits.open(file)
+                im = obj[0].data
+                hdr = obj[0].header
+                self.pupil = im
+                obj.close()
+                if hdr[3]!=resolution:
+                    self.pupil = FourierUtils.interpolateSupport(self.pupil,resolution,kind='linear')
         
-        elif (file == [] or obj == []):
+        if (file == [] or obj == []):
             x   = np.linspace(-D/2,D/2,resolution)
             X,Y = np.meshgrid(x,x)
             R   = np.hypot(X,Y)
             P   = (R <= self.R) * (R > self.R*self.obsRatio)
             self.pupil = P
+            self.verb = False
     
         if self.verbose:
             self.display()
@@ -88,18 +92,24 @@ class telescope:
                     
         print('___TELESCOPE___')
         print('----------------------------------------')
-        if self.file != []:
-            fprintf(sys.stdout,'. Ouverture du fichier:\t%s\n',self.file)
-        if self.obsRatio==0:
-            fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm',self.D)
-        else:
-            fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm\n. Central obstruction:\t%4.2f%%\n',
-                self.D,self.obsRatio*100)
+        if self.verb == True:
+            if re.search(".fits",self.file)!=None:
+                fprintf(sys.stdout,'. File opened:\t%s',self.file)
+                plt.imshow(self.pupil)
+            else:
+                fprintf(sys.stdout,'. File couldnt been open (probably not a .fits file)\n')
+                self.verb = False
+        if self.verb == False:
+            if self.obsRatio==0:
+                fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm',self.D)
+            else:
+                fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm\n. Central obstruction:\t%4.2f%%\n',
+                            self.D,self.obsRatio*100)
             
-        fprintf(sys.stdout,'. Collecting area:\t%5.2fm^2\n',self.area)
+            fprintf(sys.stdout,'. Collecting area:\t%5.2fm^2\n',self.area)
         
-        if np.isscalar(self.resolution):
-            fprintf(sys.stdout,'. Pupil resolution:\t%dX%d pixels',
+            if np.isscalar(self.resolution):
+                fprintf(sys.stdout,'. Pupil resolution:\t%dX%d pixels',
                     self.resolution,self.resolution)
                           
         print('\n----------------------------------------\n')

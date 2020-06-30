@@ -85,9 +85,9 @@ class atmosphere:
     def __init__(self,wvl,r0,weights,heights,wSpeed=0.0,wDir=0.0,L0=math.inf,verbose=False):
         
         # PARSING INPUTS        
-        self.r0  = r0        
-        self.p_wvl = wvl # = source.wvl
-        self.nL  = len(weights)
+        self.r0      = r0        
+        self.p_wvl   = wvl # = source.wvl
+        self.nL      = len(weights)
         self.weights = np.array(weights)
         self.heights = np.array(heights)
         self.wSpeed  = np.array(wSpeed)
@@ -106,7 +106,7 @@ class atmosphere:
         # DEFINE LAYERS             
         if self.nL>1:
             self.layer = np.repeat(Attribute(),self.nL)
-            for l in np.arange(0,self.nL):            
+            for l in np.arange(0,self.nL):       
                 tmp  = (weights[l]*r0**(-5/3))**(-3/5)
                 self.layer[l] = layer(tmp,weights[l],heights[l],L0[l],wSpeed[l],wDir[l])           
         else:
@@ -244,7 +244,7 @@ class atmosphere:
                 atmSlab = atm.slab(l)
                 tmp = atmSlab.covariance(atmSlab.layer.height[0]*np.tan(theta))
                 cov = cov + tmp
-                print(cov)
+                #print(cov)
         else:
             cov = atm.covariance(atm.layer.height[0]*np.tan(theta))
             

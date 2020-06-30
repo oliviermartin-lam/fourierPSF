@@ -8,7 +8,7 @@ Created on Thu Aug 16 15:00:44 2018
 import numpy as np
 import numpy.fft as fft
 import matplotlib.pyplot as plt
-import p3utils
+import FourierUtils
 import sys
 from  telescope import telescope
 from  atmosphere import atmosphere
@@ -52,30 +52,17 @@ class spatialFrequency:
         return int(np.round(fovInPixel/self.resAO))
     
     # CONTRUCTOR
-    def __init__(self,tel, atm,src,nActuator, noiseVariance, loopGain,
-                 samplingTime, latency, resAO,psInMas,fovInArcsec, nTimes=4, nGs=1):
+    def __init__(self,file):
     
         # PARSING INPUTS
-        self.tel          = tel
-        self.atm          = atm
-        self.src          = src
-        self.nActuator    = nActuator
-        self.noiseVariance= noiseVariance
-        self.loopGain     = loopGain
-        self.samplingTime = samplingTime
-        self.latency      = latency
-        self.resAO        = resAO
-        self.psInMas      = psInMas
-        self.fovInArcsec  = fovInArcsec
-        #self.nTimes       = nTimes
-        self.nGs          = nGs
-        self.atm.wvl = self.src.wvl
+        self.file         = file  
+        self.parameters(self.file)        
         
         # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
         kx = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
         ky = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
         self.kx,self.ky = np.meshgrid(kx,ky)
-                
+                        
         # DEFINE THE RECONSTRUCTOR
         if self.nGs ==1:
             self.reconstructionFilter(self.kx,self.ky)
@@ -88,6 +75,87 @@ class spatialFrequency:
     def __repr__(self):
         s = "Spatial Frequency \n kc=%.2fm^-1"%self.kc
         return s
+    
+    def parameters(self,file):
+        fichier = open("Parameters.txt","r")
+        values = []
+        
+        self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
+        
+        for line in fichier:
+            keys = line.split(' ; ')
+            if keys[0] == "path_pupil":
+                path_pupil = keys[1]
+                #values.append(0)
+            elif keys[0] == "weights":
+                for i in range(len(keys)-2):
+                    self.weights.append(keys[i+1])
+                    values.append(0)
+            elif keys[0] == "heights":
+                for i in range(len(keys)-2):
+                    self.heights.append(keys[i+1])
+                    values.append(0)
+            elif keys[0] == "wSpeed":
+                for i in range(len(keys)-2):
+                    self.wSpeed.append(keys[i+1])
+                    values.append(0)
+            elif keys[0] == "wDir":
+                for i in range(len(keys)-2):
+                    self.wDir.append(keys[i+1])
+                    values.append(0)
+            elif len(keys) == 3 :
+                values.append(keys[1])
+        values = list(map(float,values))
+        self.heights=list(map(float,self.heights))
+        self.weights=list(map(float,self.weights))
+        self.wSpeed=list(map(float,self.wSpeed))
+        self.wDir=list(map(float,self.wDir))
+        fichier.close()
+        
+        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+            self.nbLayers = len(self.weights)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('Please enter all the parameters of the different layers')
+            print('\n')
+        
+        self.weights=np.array(self.weights)
+        self.heights=np.array(self.heights)
+        self.weights=self.weights/np.sum(self.weights)
+
+        self.r0 = np.array(values[0])
+        self.L0 = values[1]
+        self.wvlAtm = values[2+2*self.nbLayers]*1e-9
+        self.D = values[3+4*self.nbLayers]
+        self.zenith_angle = values[4+4*self.nbLayers]
+        self.obsRatio = values[5+4*self.nbLayers]
+        self.resolution = values[6+4*self.nbLayers]
+        self.nActuator = values[7+4*self.nbLayers]
+        self.noiseVariance = values[8+4*self.nbLayers]
+        self.loopGain = values[9+4*self.nbLayers]
+        self.samplingTime = values[10+4*self.nbLayers]*10e-4
+        self.latency = values[11+4*self.nbLayers]*10e-4
+        self.resAO = int(values[12+4*self.nbLayers])
+        self.psInMas = values[13+4*self.nbLayers]
+        self.fovInArcsec = values[14+4*self.nbLayers]
+        self.nGs = int(values[15+4*self.nbLayers])
+        
+        self.nbSources = int(((len(values)-(16+4*self.nbLayers))/5))
+        
+        self.src = [] ; self.wvlSources = [] ; self.magnitude = [] ; self.zenith = [] ; self.azimuth = [] ; self.heightSources = []
+        
+        self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
+        
+        for n in range(self.nbSources):
+            self.wvlSources.append(values[16+4*self.nbLayers+n*5]*1e-9)
+            self.magnitude.append(values[17+4*self.nbLayers+n*5])
+            self.zenith.append(values[18+4*self.nbLayers+n*5])
+            self.azimuth.append(values[19+4*self.nbLayers+n*5])
+            self.heightSources.append(values[20+4*self.nbLayers+n*5]*self.tel.airmass)
+            self.src.append(source(self.wvlSources[n],self.magnitude[n],self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True))
+        
+        self.atm = atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0)
+        self.atm.wvl = self.src[0].wvl
         
         
 #%% RECONSTRUCTOR DEFINITION    
@@ -254,9 +322,8 @@ class spatialFrequency:
             
         kExt       = np.hypot(kxExt[index],kyExt[index])
         psd[index] = self.atm.spectrum(kExt)
-            
         
-        return psd*p3utils.pistonFilter(self.tel.D,np.hypot(kxExt,kyExt))
+        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kxExt,kyExt))
     
     def aliasingPSD(self,kx,ky,aoFilter='circle'):
         """
@@ -293,7 +360,7 @@ class spatialFrequency:
                 if (mi!=0) | (ni!=0):
                     km = kx - mi/d
                     kn = ky - ni/d
-                    PR = p3utils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
+                    PR = FourierUtils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
                     W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
                     Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
                     avr = 0
@@ -323,7 +390,7 @@ class spatialFrequency:
             
             psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
             
-        return psd*p3utils.pistonFilter(self.tel.D,np.hypot(kx,ky))*self.noiseGain
+        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))*self.noiseGain
     
     def servoLagPSD(self,kx,ky,aoFilter='circle'):
         """ SERVOLAGPSD Servo-lag power spectrum density
@@ -346,7 +413,7 @@ class spatialFrequency:
                2*np.real(F*self.h1[index]))*Wphi[index]
                     
             
-        return psd*p3utils.pistonFilter(self.tel.D,np.hypot(kx,ky))
+        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
     def anisoServoLagPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
         """%% ANISOSERVOLAGPSD Anisoplanatism + Servo-lag power spectrum density
@@ -362,8 +429,8 @@ class spatialFrequency:
         heights = self.atm.heights
         weights = self.atm.weights
         A       = 0*kx
-        if sum(sum(self.src.direction))!=0:
-            th  = self.src.direction[:,iSrc]
+        if sum(sum(self.src[0].direction))!=0:
+            th  = self.src[0].direction[:,iSrc]
             for l in np.arange(0,self.atm.nL):                
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + weights[l]*np.exp(complex(0,1)*red)            
@@ -380,7 +447,7 @@ class spatialFrequency:
             - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
                     
                 
-        return psd*p3utils.pistonFilter(self.tel.D,np.hypot(kx,ky))
+        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
     def anisoplanatismPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
         """%% ANISOPLANATISMPSD Anisoplanatism power spectrum density
@@ -397,8 +464,8 @@ class spatialFrequency:
         heights = self.atm.heights
         weights = self.atm.weights
         A       = 0*kx
-        if sum(sum(self.src.direction))!=0:
-            th  = self.src.direction[:,iSrc]
+        if sum(sum(self.src[0].direction))!=0:
+            th  = self.src[0].direction[:,iSrc]
             for l in np.arange(0,self.atm.nL):
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
@@ -408,7 +475,7 @@ class spatialFrequency:
         Wphi       = self.atm.spectrum(np.hypot(kx,ky))   
         psd[index] = A[index]*Wphi[index]
         
-        return psd*p3utils.pistonFilter(self.tel.D,np.hypot(kx,ky))
+        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
     def powerSpectrumDensity(self,kx,ky,iSrc=0,aoFilter='circle'):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
@@ -434,7 +501,7 @@ class spatialFrequency:
         """
         #self.atm.wvl = self.src.wvl[iSrc]
         # Constants
-        wvl    = self.src.wvl[iSrc]
+        wvl    = self.src[0].wvl[iSrc]
         rad2nm = 1e9*wvl/2/np.pi        
         kx     = self.kx
         ky     = self.ky
@@ -481,77 +548,59 @@ class spatialFrequency:
         psInMas = self.psInMas
         fovInArcsec = self.fovInArcsec
         dk    = 2*self.kc/self.resAO
-        wvl   = self.src.wvl[iSrc]
+        wvl   = self.src[0].wvl[iSrc]
         lonD  = (1e3*180*3600/np.pi*wvl/self.tel.D)
         if nyquistSampling == True:
             nqSmpl = 1
             psInMas= lonD/2
         else:
             nqSmpl= lonD/psInMas/2
-            
+        
         fovInPixel = int((np.ceil(2e3*fovInArcsec/psInMas))/2)
         fovInPixel   = max([fovInPixel,2*self.resAO])
         fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
         #self.nTimes = int(np.round(fovInPixel/self.resAO))
         # Get the PSD        
         psd   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=iSrc,aoFilter=aoFilter)        
-        psd   = p3utils.enlargeSupport(psd,2)
-        otfAO = fft.fftshift(p3utils.psd2otf(psd,dk))
-        otfAO = p3utils.interpolateSupport(otfAO,2*self.tel.resolution)
+        psd   = FourierUtils.enlargeSupport(psd,2)
+        otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
+        otfAO = FourierUtils.interpolateSupport(otfAO,2*self.tel.resolution)
         otfAO = otfAO/otfAO.max()
         # Get the telescope OTF
-        otfTel= p3utils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
+        otfTel= FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
         # Get the total OTF corresponding to a nyquist-sampled PSF
         otfTot= otfAO*otfTel
         
         if nqSmpl == 1:            
             # Interpolate the OTF to set the PSF FOV
-            otfTot = p3utils.interpolateSupport(otfTot,fovInPixel)
-            psf    = p3utils.otf2psf(otfTot)
+            otfTot = FourierUtils.interpolateSupport(otfTot,fovInPixel)
+            psf    = FourierUtils.otf2psf(otfTot)
         elif nqSmpl >1:
             # Zero-pad the OTF to set the PSF pixel scale
-            otfTot = p3utils.enlargeSupport(otfTot,nqSmpl)
+            otfTot = FourierUtils.enlargeSupport(otfTot,nqSmpl)
             # Interpolate the OTF to set the PSF FOV
-            otfTot = p3utils.interpolateSupport(otfTot,fovInPixel)
-            psf    = p3utils.otf2psf(otfTot)
+            otfTot = FourierUtils.interpolateSupport(otfTot,fovInPixel)
+            psf    = FourierUtils.otf2psf(otfTot)
         else:
             # Interpolate the OTF at high resolution to set the PSF FOV
-            otfTot = p3utils.interpolateSupport(otfTot,int(np.round(fovInPixel/nqSmpl)))
-            psf    = p3utils.otf2psf(otfTot)
+            otfTot = FourierUtils.interpolateSupport(otfTot,int(np.round(fovInPixel/nqSmpl)))
+            psf    = FourierUtils.otf2psf(otfTot)
             # Interpolate the PSF to set the PSF pixel scale
-            psf    = p3utils.interpolateSupport(psf,fovInPixel)
+            psf    = FourierUtils.interpolateSupport(psf,fovInPixel)
             
-        return psf,otfTel,otfAO,otfTot
-    
+        return psf, otfTel, otfAO, otfTot, self.kx
     
     
 def demo():
-    
-    tel = telescope(8,0,0.14,240,'vlt_pup_240.fits')
-    atm = atmosphere(500e-9,0.16,[0.7,0.2,0.1],[500.,4e3,10e3],L0=25,wSpeed=[5.,10.,15.],wDir=[0.,30,60.])
-    src = source(1.64e-6,12,[0],[0],verbose=True)
-    fao = spatialFrequency(tel,atm,src,21,1e-4,0.5,1e-3,1e-3,41,10,3)
-    psf,otfTel,otfAO,otfTot = fao.getPSF();
+    fao = spatialFrequency("Parameters.txt")
+    psf,otfTel,otfAO,otfTot,kx = fao.getPSF();
     
     plt.figure()
     plt.title('PSF')
     plt.imshow(np.log10(psf))
-    
-    plt.figure()
-    plt.title('Tel')
-    plt.imshow(tel.pupil)
-    """
-    plt.figure()
-    plt.title('AO')
-    plt.imshow(otfAO)
-        
-    plt.figure()
-    plt.title('Tot')
-    plt.imshow(otfTot)
-    """
+
     fao.errorBreakDown()
     
     return fao
-    
- #def demo2():
+
 fao = demo()
