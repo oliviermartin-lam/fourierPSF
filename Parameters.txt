@@ -1,21 +1,38 @@
 %%% ATMOSPHERE %%%
 r0 ; 0.16 ; [m]
 L0 ; 10 ; [m]
-weights ; 0.5 ; 0.2 ; 0.1 ; [N]
-heights ; 500. ; 4000 ; 10000 ; [m]
 wvl ; 500 ; [nm]
-wSpeed ; 5. ; 10. ; 15. ; [m/s]
-wDir ; 0. ; 30 ; 60. ; [angle]
+
+%% Layer 1 %%
+weights ; 0.5 ; [N]
+heights ; 500. ; [m]
+wSpeed ; 5. ; [m/s]
+wDir ; 0. ; [angle]
+
+%% Layer 2 %%
+weights ; 0.2 ; [N]
+heights ; 4000 ; [m]
+wSpeed ; 10. ; [m/s]
+wDir ; 30 ; [angle]
+
+%% Layer 3 %%
+weights ; 0.3 ; [N]
+heights ; 10000 ; [m]
+wSpeed ; 15. ; [m/s]
+wDir ; 60. ; [angle]
+
 
 %%% TELESCOPE %%%
 D ; 8 ; [m]
 zenith_angle ; 0 ; [degrees]
 obsRatio ; 0.14 ; [rate %]
 resolution ; 240 ; [number of pixels]
-path_pupil ; vlt_pup_240.fits ; [fichier.fits] ; 
+path_pupil ; "vlt_pup_240.fits" ; [fichier.fits]
 
 %%% AO %%%
-nActuator ; 21 ; [number of actuator in the deformable mirror]
+nActuator ; 21; [number of actuator in the deformable mirror]
+#nLanclet
+#pitch
 noiseVariance ; 0.0001 ; 
 loopGain ; 1 ; 
 samplingTime ; 1 ; [ms]
@@ -24,28 +41,48 @@ resAO ; 41 ;
 psInMas ; 10 ; 
 fovInArcsec ; 3 ; [field of view in arcseconds]
 
-%%% RECONSTRUCTOR %%%
-nGs ; 1 ; 
-
 %%% SCIENTIFIC SOURCE %%%
 wvl ; 1650 ; [nm]
-#magnitude ; 12 ; [zero point Vega]
 zenith ; 0 ; [arcseconds]
+#x
 azimuth ; 0 ; [arcseconds]
-#height ; 0 ; [m (0 if infinite)]
-
-%%% GUIDE STAR 1 %%%
-wvl ; 1650 ; [nm]
-#magnitude ; 12 ; [zero point Vega]
-zenith ; 20 ; [arcseconds]
-azimuth ; 0 ; [arcseconds]
+#y
 height ; 0 ; [m (0 if infinite)]
 
-%%% GUIDE STAR 2 %%%
+%%% GS 1 %%%
 wvl ; 1650 ; [nm]
-#magnitude ; 12 ; [zero point Vega]
-zenith ; 20 ; [arcseconds]
+zenith ; 0 ; [arcseconds]
+#x
 azimuth ; 0 ; [arcseconds]
+#y
+height ; 0 ; [m (0 if infinite)]
+
+%%% GS 2 %%%
+wvl ; 1650 ; [nm]
+zenith ; 10 ; [arcseconds]
+#x
+azimuth ; 0 ; [arcseconds]
+#y
 height ; 0 ; [m (0 if infinite)]
 
 
+%%% GS 3 %%%
+wvl ; 1650 ; [nm]
+zenith ; 10 ; [arcseconds]
+#x
+azimuth ; 180 ; [arcseconds]
+#y
+height ; 0 ; [m (0 if infinite)]
+
+
+%%% TRUE ATMOSPHERE %%%
+
+%%% A PRIORI ATMOSPHERE %%%
+
+%%% ATMOSPHERE RECONSTRUITE %%%
+h_dm ; 500 ; 4000 ; 10000 ; [altitude des DMs]
+h_recons ; 500 ; 4000 ; 10000 ; [Altitude des couches reconstruites]
+theta_x ; 0.0 ; 0.0 ; 0.0 ; [position d'optimisation x]
+theta_y ; 20.0 ; 20.0 ; 20.0 ; [position d'optimisation y]
+theta_w ; 0.33 ; 0.33 ; 0.33 ; [poids]
+condmax ; 30 ; [conditionnement max acceptable dans l'inversion pour le calcul de Popt]

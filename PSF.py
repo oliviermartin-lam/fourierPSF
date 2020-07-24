@@ -13,6 +13,8 @@ import sys
 from  telescope import telescope
 from  atmosphere import atmosphere
 from  source import source
+import re
+import pdb
 
 def fprintf(stream, format_spec, *args):
     stream.write(format_spec % args)
@@ -67,7 +69,7 @@ class spatialFrequency:
         if self.nGs ==1:
             self.reconstructionFilter(self.kx,self.ky)
         else:
-            self.tomographicReconstructor(self.kx,self.ky)
+            self.finalReconstructor(self.kx,self.ky)
         
         # DEFINE THE CONTROLLER
         self.controller(self.kx,self.ky)
@@ -81,28 +83,44 @@ class spatialFrequency:
         values = []
         
         self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
+        self.theta_x = [] ; self.h_dm = [] ; self.h_recons = [] ; self.theta_y = [] ; self.theta_w = []
         
         for line in fichier:
-            keys = line.split(' ; ')
-            if keys[0] == "path_pupil":
+            keys = line.split(';')
+            if re.search("path_pupil",keys[0])!=None:
+                keys = line.split('"')
                 path_pupil = keys[1]
-                #values.append(0)
-            elif keys[0] == "weights":
+            elif re.search("weights",keys[0])!=None:
                 for i in range(len(keys)-2):
                     self.weights.append(keys[i+1])
                     values.append(0)
-            elif keys[0] == "heights":
+            elif re.search("heights",keys[0])!=None:
                 for i in range(len(keys)-2):
                     self.heights.append(keys[i+1])
                     values.append(0)
-            elif keys[0] == "wSpeed":
+            elif re.search("wSpeed",keys[0])!=None:
                 for i in range(len(keys)-2):
                     self.wSpeed.append(keys[i+1])
                     values.append(0)
-            elif keys[0] == "wDir":
+            elif re.search("wDir",keys[0])!=None:
                 for i in range(len(keys)-2):
                     self.wDir.append(keys[i+1])
                     values.append(0)
+            elif re.search("theta_x",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.theta_x.append(keys[i+1])
+            elif re.search("theta_y",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.theta_y.append(keys[i+1])
+            elif re.search("theta_w",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.theta_w.append(keys[i+1])
+            elif re.search("h_dm",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.h_dm.append(keys[i+1])
+            elif re.search("h_recons",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.h_recons.append(keys[i+1])
             elif len(keys) == 3 :
                 values.append(keys[1])
         values = list(map(float,values))
@@ -110,6 +128,11 @@ class spatialFrequency:
         self.weights=list(map(float,self.weights))
         self.wSpeed=list(map(float,self.wSpeed))
         self.wDir=list(map(float,self.wDir))
+        self.theta_x=list(map(float,self.theta_x))
+        self.theta_y=list(map(float,self.theta_y))
+        self.theta_w=list(map(float,self.theta_w))
+        self.h_dm=list(map(float,self.h_dm))
+        self.h_recons=list(map(float,self.h_recons))
         fichier.close()
         
         if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
@@ -122,10 +145,11 @@ class spatialFrequency:
         self.weights=np.array(self.weights)
         self.heights=np.array(self.heights)
         self.weights=self.weights/np.sum(self.weights)
+        self.theta_w = self.theta_w/np.sum(self.theta_w)
 
         self.r0 = np.array(values[0])
         self.L0 = values[1]
-        self.wvlAtm = values[2+2*self.nbLayers]*1e-9
+        self.wvlAtm = values[2]*1e-9
         self.D = values[3+4*self.nbLayers]
         self.zenith_angle = values[4+4*self.nbLayers]
         self.obsRatio = values[5+4*self.nbLayers]
@@ -138,21 +162,22 @@ class spatialFrequency:
         self.resAO = int(values[12+4*self.nbLayers])
         self.psInMas = values[13+4*self.nbLayers]
         self.fovInArcsec = values[14+4*self.nbLayers]
-        self.nGs = int(values[15+4*self.nbLayers])
+        self.condmax = values[-1]
         
-        self.nbSources = int(((len(values)-(16+4*self.nbLayers))/5))
+        self.nGs = int(((len(values)-(15+4*self.nbLayers))/5)+1)
+        #self.nGs = 1
         
-        self.src = [] ; self.wvlSources = [] ; self.magnitude = [] ; self.zenith = [] ; self.azimuth = [] ; self.heightSources = []
+        self.src = [] ; self.wvlSources = [] ; self.zenith = [] ; self.azimuth = [] ; self.heightSources = []
         
         self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
         
-        for n in range(self.nbSources):
-            self.wvlSources.append(values[16+4*self.nbLayers+n*5]*1e-9)
-            self.magnitude.append(values[17+4*self.nbLayers+n*5])
-            self.zenith.append(values[18+4*self.nbLayers+n*5])
-            self.azimuth.append(values[19+4*self.nbLayers+n*5])
-            self.heightSources.append(values[20+4*self.nbLayers+n*5]*self.tel.airmass)
-            self.src.append(source(self.wvlSources[n],self.magnitude[n],self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True))
+        
+        for n in range(self.nGs):
+            self.wvlSources.append(values[15+4*self.nbLayers+n*4]*1e-9)
+            self.zenith.append(values[16+4*self.nbLayers+n*4])
+            self.azimuth.append(values[17+4*self.nbLayers+n*4])
+            self.heightSources.append(values[18+4*self.nbLayers+n*4]*self.tel.airmass)
+            self.src.append(source(self.wvlSources[n],self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True))
         
         self.atm = atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0)
         self.atm.wvl = self.src[0].wvl
@@ -196,29 +221,83 @@ class spatialFrequency:
         k    = np.hypot(kx,ky)     
         nK   = len(k[0,:])
         #Wphi = self.atm.spectrum(k);
+        nL = self.nbLayers
+        nGs = self.nGs
+        Alpha = [self.zenith,self.azimuth] # angles étoiles guides
+        Alpha = np.array(Alpha)
             
         # Measure matrix
         i    = complex(0,1)
-        d    = self.tel.D/(self.nActuator-1)     
+        d    = self.tel.D/(self.nActuator-1)   #taille sous-pupille   
         Sx   = 2*i*np.pi*kx*d
         Sy   = 2*i*np.pi*ky*d                        
-        Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky))   
+        Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky)) 
+        SxAv = Sx*Av
+        SyAv = Sy*Av
+        index  = k <= self.kc
         
         #pdb.set_trace()
-        
-        M    = np.zeros([2*self.nGs,self.nGs,nK,nK])
-        for i in np.arange(0,self.nGs):
-            M[2*i,i,:,:] = Sx*Av            
-            M[2*i+1,i,:,:] = Sy*Av     
+        """
+        M    = np.zeros([nK,nK,2*nGs,nGs],dtype=complex)
+        for k in np.arange(0,nGs):
+            M[:,:,2*k,k] = SxAv
+            M[:,:,2*k+1,k] = SyAv     
         self.M = M   
+        """
+        M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
+        for j in np.arange(0,nGs):
+            M[index,j,j] = 2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])
+        self.M = M
         # Projection matrix
-        P    = np.zeros([self.atm.nL,self.nGs,nK,nK])
+        P    = np.zeros([nK,nK,nGs,self.atm.nL],dtype=complex)
         
-        #MP   = M*P
+        for n in range(nL):
+            for j in range(nGs):
+                fx = kx*Alpha[0,j]
+                fy = ky*Alpha[1,j]
+                P[index,j,n] = np.exp(i*2*np.pi*self.h_recons[n]*(fx[index]+fy[index]))
+                
+        MP = np.matmul(M,P)
+        
+        MP_t = np.conj(MP.transpose(0,1,3,2))
+        
+        """
+        #Cb_recons = np.zeros([nK,nK,2*nGs,2*nGs]) # matrice covariance bruit
+        Cb = np.zeros([nK,nK,2*nGs,2*nGs],dtype=complex)
+        #Cbalias = np.zeros([nK,nK,2*nGs,2*nGs])
+        for k in range(nGs):
+            Cb[:,:,2*k,2*k]     = self.noiseVariance
+            Cb[:,:,2*k+1,2*k+1] = self.noiseVariance
+        self.Cb = Cb
+        """
+        Cb = np.zeros([nK,nK,nGs,nGs],dtype=complex)
+        #Cbalias = np.zeros([nK,nK,2*nGs,2*nGs])
+        for j in range(nGs):
+            Cb[:,:,j,j]     = self.noiseVariance
+        self.Cb = Cb
+        
+        Cphi = np.zeros ([nK,nK,nL,nL],dtype=complex)
+        for j in range(nL):
+            atm_i = self.atm.slab(j)
+            Cphi[:,:,j,j] = atm_i.spectrum(k)
+        self.Cphi = Cphi
+                
+            
+        to_inv = np.matmul(np.matmul(MP,Cphi),MP_t)+Cb # cherche fonction inverse
+        inv = to_inv
+        
+        for x in range(to_inv.shape[0]):
+            for y in range(to_inv.shape[1]):
+                if index[x,y] == True :
+                    u,s,v = np.linalg.svd(to_inv[x,y,:,:])
+                    Cs_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0)) # definir condmax dans .txt
+                    inv[x,y,:,:] = np.matmul(np.transpose(v),np.matmul(Cs_inv,np.transpose(u)))
+        
+        Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
         
         #Tomographic reconstructor
         #self.SxAv = Sx*Av
-        self.SyAv = Sy*Av
+        #self.SyAv = Sy*Av
         #gPSD = abs(self.SxAv)**2 + abs(self.SyAv)**2 + Wn/Wphi
         
         #self.Rt = inv(inv(MP.T*Wn)*MP + inv(Wphi))*MP.T*inv(Wn)
@@ -226,6 +305,54 @@ class spatialFrequency:
         # Manage NAN value if any   
         #self.Rt[np.isnan(self.Rt)] = 0
         
+        return Wtomo
+        
+    def optimalProjector(self,kx,ky):
+        nDm = len(self.h_dm)
+        nDir = int(len(self.theta_x))
+        nL = len(self.h_recons)
+        nK = len(kx[0,:])
+        i    = complex(0,1)
+        
+        N = np.zeros([nK,nK,nDm,nDm])
+        index  = np.hypot(kx,ky) <= self.kc
+        for j in range(nDm):
+            N[index,j,j] = 1
+        
+        mat1 = np.zeros([nK,nK,nDm,nL],dtype=complex)
+        to_inv = np.zeros([nK,nK,nDm,nDm],dtype=complex)
+        for d_o in range(nDir):                 #boucle sur les directions
+            Pdm = np.zeros ([nK,nK,1,nDm],dtype=complex)
+            Pl = np.zeros ([nK,nK,1,nL],dtype=complex)
+            fx = self.theta_x[d_o]*kx
+            fy = self.theta_y[d_o]*ky
+            for j in range(nDm):                #boucle sur les dm
+                Pdm[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
+            Pdm = np.matmul(Pdm,N)
+            Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
+            for j in range(nL):                 #boucle sur les couches atm
+                Pl[:,:,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx+fy))
+            mat1 += np.matmul(Pdm_t,Pl)*self.theta_w[d_o] 
+            to_inv += np.matmul(Pdm_t,Pdm)*self.theta_w[d_o]
+            
+        mat2 = to_inv
+        
+        for x in range(to_inv.shape[0]):
+            for y in range(to_inv.shape[1]):
+                u,s,v = np.linalg.svd(to_inv[x,y,:,:])
+                P_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
+                mat2[x,y,:,:] = np.matmul(v.transpose(),np.matmul(P_inv,u.transpose()))
+        
+        Popt = np.matmul(mat2,mat1)
+        
+        return Popt
+    
+    def finalReconstructor(self,kx,ky):
+        Wtomo = self.tomographicReconstructor(kx,ky)
+        Popt = self.optimalProjector(kx,ky)
+        self.W = np.matmul(Popt,Wtomo)
+        
+        return self.W
             
         
         
@@ -335,61 +462,83 @@ class spatialFrequency:
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc    
-
-        i  = complex(0,1)
-        k  = np.hypot(kx,ky)
-        d  = self.tel.D/(self.nActuator-1)
-        T  = self.samplingTime
-        td = self.latency        
-        vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
-        vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
-        Rx = self.Rx
-        Ry = self.Ry
+        if self.nGs == 1:
+            i  = complex(0,1)
+            k  = np.hypot(kx,ky)
+            d  = self.tel.D/(self.nActuator-1)
+            T  = self.samplingTime
+            td = self.latency        
+            vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
+            vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
+            Rx = self.Rx
+            Ry = self.Ry
         
         
-        if self.loopGain == 0:
-            tf = 1
-        else:
-            tf = self.h1#np.reshape(self.h1[index],(side,side))
+            if self.loopGain == 0:
+                tf = 1
+            else:
+                tf = self.h1#np.reshape(self.h1[index],(side,side))
                     
-        weights = self.atm.weights
+            weights = self.atm.weights
         
-        w = 2*i*np.pi*d;
-        for mi in np.arange(-self.nTimes,self.nTimes+1):
-            for ni in np.arange(-self.nTimes,self.nTimes+1):
-                if (mi!=0) | (ni!=0):
-                    km = kx - mi/d
-                    kn = ky - ni/d
-                    PR = FourierUtils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
-                    W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
-                    Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
-                    avr = 0
+            w = 2*i*np.pi*d;
+            for mi in np.arange(-self.nTimes,self.nTimes+1):
+                for ni in np.arange(-self.nTimes,self.nTimes+1):
+                    if (mi!=0) | (ni!=0):
+                        km = kx - mi/d
+                        kn = ky - ni/d
+                        PR = FourierUtils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
+                        W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
+                        Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
+                        avr = 0
                         
-                    for l in np.arange(0,self.atm.nL):
-                        avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
-                        *np.exp(2*i*np.pi*km*vx[l]*td)*np.exp(2*i*np.pi*kn*vy[l]*td)*tf)
+                        for l in np.arange(0,self.atm.nL):
+                            avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
+                            *np.exp(2*i*np.pi*km*vx[l]*td)*np.exp(2*i*np.pi*kn*vy[l]*td)*tf)
                                                           
-                    tmp = tmp + PR*W_mn * abs(Q*avr)**2
+                        tmp = tmp + PR*W_mn * abs(Q*avr)**2
                
-        tmp[np.isnan(tmp)] = 0        
-        psd[index]         = tmp[index]
+            tmp[np.isnan(tmp)] = 0        
+            psd[index]         = tmp[index]
         
-        return psd*self.atm.r0**(-5/3)*0.0229   
+        return psd*self.atm.r0**(-5/3)*0.0229 
             
     def noisePSD(self,kx,ky,aoFilter='circle'):
         """NOISEPSD Noise error power spectrum density
         """
-            
         kc = self.kc;
-        psd = np.zeros(kx.shape)
+        psd = np.zeros(kx.shape,dtype=complex)
         if self.noiseVariance > 0:
             if aoFilter == 'square':
                 index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
             elif aoFilter == 'circle':
-                index  = np.hypot(kx,ky) <= self.kc
-            
-            psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
-            
+                index  = np.hypot(kx,ky) <= self.kc  
+            if self.nGs == 1:        
+                psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
+                
+            else:
+                #k    = np.hypot(kx,ky)    
+                nK   = len(np.hypot(kx,ky)[0,:])
+                nDm  = len(self.h_dm)
+                i    = complex(0,1)
+                PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
+                
+                fx = self.theta_x[0]*kx   #theta[0] = source scientifique
+                fy = self.theta_y[1]*ky
+                for j in range(nDm):                #boucle sur les dm
+                    PthDM[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
+                self.PthDM = PthDM
+                PW = np.matmul(PthDM,self.W)
+                self.PW = PW
+                PW_t = np.conj(PW.transpose(0,1,3,2))
+                self.PW_t = PW_t
+                
+                for x in range(nK):
+                    for y in range(nK):
+                        if index[x,y] == True:
+                            psd[x,y] = np.matmul(PW[x,y,:,:],np.matmul(self.Cb[x,y,:,:],PW_t[x,y,:,:]))
+                
+
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))*self.noiseGain
     
     def servoLagPSD(self,kx,ky,aoFilter='circle'):
@@ -401,21 +550,21 @@ class spatialFrequency:
         if aoFilter == 'square':
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= self.kc       
-                
-        F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-        Wphi = self.atm.spectrum(np.hypot(kx,ky))
+            index  = np.hypot(kx,ky) <= self.kc     
+            
+        if self.nGs == 1:        
+            F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
+            Wphi = self.atm.spectrum(np.hypot(kx,ky))
         
-        if (self.loopGain == 0):
-            psd[index] = abs(1-F)**2*Wphi[index]
-        else:
-            psd[index] = (1 + abs(F)**2*self.h2[index] - 
-               2*np.real(F*self.h1[index]))*Wphi[index]
-                    
+            if (self.loopGain == 0):
+                psd[index] = abs(1-F)**2*Wphi[index]
+            else:
+                psd[index] = (1 + abs(F)**2*self.h2[index] - 
+                   2*np.real(F*self.h1[index]))*Wphi[index]
             
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
-    def anisoServoLagPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
+    def spatioTemporalPSD(self,kx,ky,iSrc=0,aoFilter='circle'): #def spatioTemporalPSD
         """%% ANISOSERVOLAGPSD Anisoplanatism + Servo-lag power spectrum density
         """
            
@@ -426,27 +575,67 @@ class spatialFrequency:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc       
         
-        heights = self.atm.heights
-        weights = self.atm.weights
-        A       = 0*kx
-        if sum(sum(self.src[0].direction))!=0:
-            th  = self.src[0].direction[:,iSrc]
-            for l in np.arange(0,self.atm.nL):                
-                red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
-                A   = A + weights[l]*np.exp(complex(0,1)*red)            
-        else:
-            A = np.ones(kx.shape)
-                        
-        F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-        Wphi = self.atm.spectrum(np.hypot(kx,ky))   
+        if self.nGs == 1:
+            heights = self.atm.heights
+            weights = self.atm.weights
+            A       = 0*kx
+            if sum(sum(self.src[0].direction))!=0:
+                th  = self.src[0].direction[:,iSrc]
+                for l in np.arange(0,self.atm.nL):                
+                    red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
+                    A   = A + weights[l]*np.exp(complex(0,1)*red)            
+            else:
+                A = np.ones(kx.shape)
+        
+            F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
+            Wphi = self.atm.spectrum(np.hypot(kx,ky))   
             
-        if (self.loopGain == 0):  
-            psd[index] = abs(1-F)**2*A*Wphi[index]
-        else:
-            psd[index] = (1 + abs(F)**2*self.h2[index] 
-            - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
-                    
+            if (self.loopGain == 0):  
+                psd[index] = abs(1-F)**2*A*Wphi[index]
+            else:
+                psd[index] = (1 + abs(F)**2*self.h2[index] 
+                - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
                 
+        else:
+            deltaT = self.latency+self.samplingTime
+            k = np.hypot(kx,ky)
+            nK = len(k[0,:])
+            nH = self.nbLayers
+            Hs = self.heights
+            nDm  = len(self.h_dm)
+            i    = complex(0,1)
+            d    = self.tel.D/(self.nActuator-1)
+            
+            xx = self.src[0]
+            
+            MPaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
+            for h in range(nH):
+                www = np.sinc(self.samplingTime*self.wSpeed[h]*(np.cos(self.wDir[h]*np.pi/180)*kx+np.sin(self.wDir[h]*np.pi/180)*ky))
+                for g in range(self.nGs):
+                    #fx = self.theta_x[g]*kx
+                    #fy = self.theta_y[g]*ky
+                    fx = 0*kx
+                    fy = 0*ky
+                    MPaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2**np.pi*Hs[h]*(fx[index]+fy[index]))
+            
+            PthL = np.zeros([nK,nK,1,nH],dtype=complex)
+            for j in range(nH):
+                PthL[:,:,0,j] = np.exp(i*2*np.pi*Hs[j]*((self.theta_x[0]*kx+self.theta_y[0]*ky)-(deltaT*self.wSpeed[j]*(np.cos(self.wDir[j]*np.pi/180)*kx+np.sin(self.wDir[j]*np.pi/180)*ky))))
+            
+            PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
+            for j in range(nDm):                #boucle sur les dm
+                PthDM[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
+            
+            proj = np.zeros([nK,nK,1,nH],dtype=complex)
+            for x in range(nK):
+                for y in range(nK):
+                    if index[x,y] == True:
+                        proj[x,y] = PthL[x,y]-np.matmul(PthDM[x,y,:,:],np.matmul(self.W[x,y,:,:],MPaL[x,y,:,:]))
+            proj_t = np.conj(proj.transpose(0,1,3,2))
+            
+            psd = np.matmul(proj,np.matmul(self.Cphi,proj_t))
+            psd = psd.reshape(nK,nK)
+
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
     def anisoplanatismPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
@@ -485,16 +674,22 @@ class spatialFrequency:
         kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
         kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
-        psd         = np.zeros((resExt,resExt))
+        psd         = np.zeros((resExt,resExt),dtype=complex)
                       
         index  = (abs(kxExt) <= kc) & (abs(kyExt) <= kc) 
         # Sums PSDs
+        noise = self.noisePSD(kx,ky,aoFilter=aoFilter)
+        alias = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
+        spatio = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        """
         tmp = self.noisePSD(kx,ky,aoFilter=aoFilter) \
         + self.aliasingPSD(kx,ky,aoFilter=aoFilter) \
-        + self.anisoServoLagPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        + self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        """
+        tmp = noise + alias + spatio
         
-        psd[np.where(index)] = tmp.ravel()        
-        return psd + self.fittingPSD(kx,ky,aoFilter=aoFilter)
+        psd[np.where(index)] = tmp.ravel()
+        return psd + self.fittingPSD(kx,ky,aoFilter=aoFilter),spatio,noise
     
     def errorBreakDown(self,iSrc=0,aoFilter='circle'):
         """
@@ -515,17 +710,17 @@ class spatialFrequency:
         psdFit = self.fittingPSD(kx,ky,aoFilter=aoFilter)
         psdAl  = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
         psdN   = self.noisePSD(kx,ky,aoFilter=aoFilter)
-        psdAS  = self.anisoServoLagPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        psdST  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
         psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
         psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
         # Derives wavefront error
         wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,kxExt),kxExt)))
         wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,kx),kx)))
         wfeN   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,kx),kx)))
-        wfeAS  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAS,kx),kx)))
+        wfeST  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,kx),kx)))
         wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
         wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
-        wfeTot = np.sqrt(wfeFit**2+wfeAl**2+wfeAS**2+wfeN**2)
+        wfeTot = np.sqrt(wfeFit**2+wfeAl**2+wfeST**2+wfeN**2)
         strehl = 100*np.exp(-(wfeTot/rad2nm)**2)
         # Print
         print('\n_____ ERROR BREAKDOWN _____')
@@ -535,7 +730,7 @@ class spatialFrequency:
         fprintf(sys.stdout,'.Fitting error:\t\t\t%4.2fnm\n',wfeFit)
         fprintf(sys.stdout,'.Aliasing error:\t\t%4.2fnm\n',wfeAl)
         fprintf(sys.stdout,'.Noise error:\t\t\t%4.2fnm\n',wfeN)
-        fprintf(sys.stdout,'.Aniso+servoLag error:\t\t%4.2fnm\n',wfeAS)
+        fprintf(sys.stdout,'.Aniso+servoLag error:\t\t%4.2fnm\n',wfeST)
         print('-------------------------------------------')
         fprintf(sys.stdout,'.Sole anisoplanatism error:\t%4.2fnm\n',wfeAni)
         fprintf(sys.stdout,'.Sole servoLag error:\t\t%4.2fnm\n',wfeS)
@@ -561,7 +756,7 @@ class spatialFrequency:
         fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
         #self.nTimes = int(np.round(fovInPixel/self.resAO))
         # Get the PSD        
-        psd   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=iSrc,aoFilter=aoFilter)        
+        psd,spatio,noise   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=iSrc,aoFilter=aoFilter)        
         psd   = FourierUtils.enlargeSupport(psd,2)
         otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
         otfAO = FourierUtils.interpolateSupport(otfAO,2*self.tel.resolution)
@@ -588,16 +783,17 @@ class spatialFrequency:
             # Interpolate the PSF to set the PSF pixel scale
             psf    = FourierUtils.interpolateSupport(psf,fovInPixel)
             
-        return psf, otfTel, otfAO, otfTot, self.kx
+        return psf,otfAO, psd , spatio , noise , self.Cphi
     
     
 def demo():
     fao = spatialFrequency("Parameters.txt")
-    psf,otfTel,otfAO,otfTot,kx = fao.getPSF();
+    psf,otfAO,psd,spatio,noise,Cphi = fao.getPSF();
     
     plt.figure()
     plt.title('PSF')
     plt.imshow(np.log10(psf))
+    plt.savefig('psf.png')
 
     fao.errorBreakDown()
     
