@@ -1,13 +1,13 @@
 %%% TRUE ATMOSPHERE %%%
 r0 ; 0.16 ; [m]
 L0 ; 10 ; [m]
-wavelenght ; 500 ; [nm]
+wavelenght ; 1650 ; [nm]
 
 %% Layer 1-10 %%
 weights ; 0.41 ; 0.16 ; 0.1 ; 0.09 ; 0.08 ; 0.05 ; 0.045 ; 0.035 ; 0.02 ; 0.01 ; [N]
 heights ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [m]
 wSpeed ; 20. ; 20. ; 4.5 ; 15.6 ; 25. ; 10.2 ; 8.3 ; 20 ; 10 ; 20 ; [m/s]
-wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 085 ; 180 ; 0 ; 180 ; [angle]
+wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 85 ; 180 ; 0 ; 180 ; [angle]
 
 
 %%% TELESCOPE %%%
@@ -30,7 +30,7 @@ psInMas ; 10 ;
 fovInArcsec ; 3 ; [field of view in arcseconds]
 
 %%% SCIENTIFIC SOURCE %%%
-wvl ; 500 ; [nm]
+wvl ; 1650 ; [nm]
 zenith ; 0 ; [arcseconds]
 #x
 azimuth ; 0 ; [arcseconds]
@@ -38,36 +38,37 @@ azimuth ; 0 ; [arcseconds]
 height ; 0 ; [m (0 if infinite)]
 
 %%% GS 1 %%%
-wvl ; 1650 ; [nm]
-zenith ; 0 ; [arcseconds]
+wvl ; 500 ; [nm]
+zenith ; 10 ; [arcseconds]
 #x
 azimuth ; 0 ; [arcseconds]
 #y
-height ; 80000 ; [m (0 if infinite)]
+height ; 0 ; [m (0 if infinite)]
 
 %%% GS 2 %%%
-wvl ; 1650 ; [nm]
-zenith ; 60 ; [arcseconds]
+wvl ; 500 ; [nm]
+zenith ; 10 ; [arcseconds]
 #x
-azimuth ; 0 ; [arcseconds]
+azimuth ; 180 ; [arcseconds]
 #y
-height ; 80000 ; [m (0 if infinite)]
+height ; 0 ; [m (0 if infinite)]
 
 %%% GS 3 %%%
-wvl ; 1650 ; [nm]
-zenith ; 180 ; [arcseconds]
+wvl ; 500 ; [nm]
+zenith ; 10 ; [arcseconds]
 #x
-azimuth ; 0 ; [arcseconds]
+azimuth ; 90 ; [arcseconds]
 #y
-height ; 90000 ; [m (0 if infinite)]
+height ; 0 ; [m (0 if infinite)]
 
 %%% GS 4 %%%
-wvl ; 1650 ; [nm]
-zenith ; 240 ; [arcseconds]
+wvl ; 500 ; [nm]
+zenith ; 10 ; [arcseconds]
 #x
-azimuth ; 0 ; [arcseconds]
+azimuth ; 240 ; [arcseconds]
 #y
-height ; 80000 ; [m (0 if infinite)]
+height ; 0 ; [m (0 if infinite)]
+
 
 %%% A PRIORI ATMOSPHERE %%%
 
