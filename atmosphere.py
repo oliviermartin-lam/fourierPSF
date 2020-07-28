@@ -11,6 +11,7 @@ import scipy.special as spc
 import scipy.optimize as spo
 import math
 import sys
+import FourierUtils
 
 #%%
 def fprintf(stream, format_spec, *args):
@@ -108,7 +109,8 @@ class atmosphere:
             self.layer = np.repeat(Attribute(),self.nL)
             for l in np.arange(0,self.nL):       
                 tmp  = (weights[l]*r0**(-5/3))**(-3/5)
-                self.layer[l] = layer(tmp,weights[l],heights[l],L0[l],wSpeed[l],wDir[l])           
+                self.layer[l] = layer(tmp,weights[l],heights[l],L0[l],wSpeed[l],wDir[l])    
+                
         else:
             self.layer = layer(r0,weights,heights,L0,wSpeed,wDir)           
             
@@ -118,7 +120,8 @@ class atmosphere:
         """SLAB Create a single turbulence layer atmosphere object            
         singledAtm = slab(atm,k) creates an atmosphere object from
         the old atm object and the k-th turbulent layer"""
-        r0l= (self.layer[layerIndex].weight*self.r0**(-5/3))**(-3/5)
+        #r0l= (self.layer[layerIndex].weight*self.r0**(-5/3))**(-3/5)
+        r0l = self.layer[layerIndex].r0
         hl = [self.layer[layerIndex].height]
         L0l= self.layer[layerIndex].L0
         wSl= [self.layer[layerIndex].wSpeed]

@@ -34,13 +34,11 @@ class source:
         return 2*np.pi/self.wvl
         
     # CONSTRUCTOR
-    def __init__(self,wvl,magnitude,zenith,azimuth,height=math.inf,nSource=1,verbose=False):
+    def __init__(self,wvl,zenith,azimuth,height=math.inf,nSource=1,verbose=False):
        
         # Vectorizing inputs is required  
         if np.isscalar(wvl):
-            wvl= np.array([wvl])
-        if np.isscalar(magnitude):
-            magnitude= np.array([magnitude])        
+            wvl= np.array([wvl])     
         if np.isscalar(zenith):
             zenith = np.array([zenith])
         if np.isscalar(azimuth):
@@ -50,8 +48,7 @@ class source:
         
         
          # PARSING INPUTS
-        self.wvl       = wvl        # Wavelength value in meter        
-        self.magnitude = magnitude  # Magnitude        
+        self.wvl       = wvl        # Wavelength value in meter             
         self.zenith    = zenith     # Zenith angle in arcsec
         self.azimuth   = azimuth    # Azimuth angle in degree
         self.height    = height     # Source height in meter
@@ -76,16 +73,12 @@ class source:
         if test(wvl):
             print('Select the first wavelength value out from the given inputs')
             self.wvl = self.wvl[0]*np.ones(self.nSrc)
-        if test(magnitude):
-            print('Select the first magnitude value out from the given inputs')
-            self.magnitude = self.magnitude[0]*np.ones(self.nSrc)
         if test(height):
             print('Select the first height value out from the given inputs')
             self.height = self.height[0]*np.ones(self.nSrc)
     
         # Put into array format
         self.wvl       = np.array(self.wvl)
-        self.magnitude = np.array(self.magnitude)
         self.zenith    = np.array(self.zenith)
         self.azimuth   = np.array(self.azimuth)
         self.height    = np.array(self.height)
@@ -99,15 +92,14 @@ class source:
        
         print('___ SOURCES', self.nSource,'___')
         print('--------------------------------------------------------------------------')        
-        print(' Obj   zen[arcsec] azim[deg]  height[m]  wavelength[micron] magnitude[mag]\n')
+        print(' Obj   zen[arcsec] azim[deg]  height[m]  wavelength[micron]\n')
         if self.nSrc > 1:
             for kObj in np.arange(0,self.nSrc):
-                    fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f            %5.2f\n',
+                    fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
                             kObj,self.zenith[kObj],self.azimuth[kObj],
-                            self.height[kObj],self.wvl[kObj]*1e6,
-                            self.magnitude[kObj])
+                            self.height[kObj],self.wvl[kObj]*1e6)
         else:
-           fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f            %5.2f\n',
-                   self.nSource,self.zenith[0],self.azimuth[0],self.height[0],self.wvl[0]*1e6,self.magnitude[0]) 
+           fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
+                   self.nSource,self.zenith[0],self.azimuth[0],self.height[0],self.wvl[0]*1e6) 
                
         print('--------------------------------------------------------------------------\n')        
