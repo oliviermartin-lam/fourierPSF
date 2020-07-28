@@ -161,8 +161,8 @@ class spatialFrequency:
         
         self.weights=np.array(self.weights)
         self.heights=np.array(self.heights)
-        self.theta_x=np.array(self.theta_x)*60/206265
-        self.theta_y=np.array(self.theta_y)*60/206265
+        self.theta_x=np.array(self.theta_x)/206265
+        self.theta_y=np.array(self.theta_y)/206265
         self.wDir=np.array(self.wDir)
         self.weights=self.weights/np.sum(self.weights)
         self.theta_w = self.theta_w/np.sum(self.theta_w)
@@ -250,12 +250,11 @@ class spatialFrequency:
         nGs = self.nGs
         #Alpha = [self.zenith,self.azimuth] # angles étoiles guides
         Alpha = np.zeros([2,nGs])
-        pdb.set_trace()
         for j in range(nGs):
             Alpha[0,j] = self.gs[j].direction[0]
             Alpha[1,j] = self.gs[j].direction[1]
-        arcsec2rad = np.pi/180/3600
-        Alpha = np.array(Alpha)
+        #arcsec2rad = np.pi/180/3600
+        #Alpha = np.array(Alpha)
             
         # Measure matrix
         i    = complex(0,1)
@@ -317,14 +316,19 @@ class spatialFrequency:
                 
             
         to_inv = np.matmul(np.matmul(MP,Cphi),MP_t)+Cb 
-        inv = to_inv
+        inv = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
                 if index[x,y] == True :
+                    """
                     u,s,v = np.linalg.svd(to_inv[x,y,:,:])
                     Cs_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
-                    inv[x,y,:,:] = np.matmul(np.transpose(v),np.matmul(Cs_inv,np.transpose(u)))
+                    inv[x,y,:,:] = np.matmul(u,np.matmul(Cs_inv,v))
+                    """
+                    inv[x,y,:,:] = np.linalg.inv(to_inv[x,y,:,:])
+        
+        #print(np.matmul(to_inv,inv)[4])
         
         Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
         
@@ -336,44 +340,50 @@ class spatialFrequency:
         nL = len(self.h_recons)
         nK = len(kx[0,:])
         i    = complex(0,1)
-        
-        N = np.zeros([nK,nK,nDm,nDm])
         index  = np.hypot(kx,ky) <= self.kc
+        """
+        N = np.zeros([nK,nK,nDm,nDm])
         for j in range(nDm):
             N[index,j,j] = 1
+            """
         
         mat1 = np.zeros([nK,nK,nDm,nL],dtype=complex)
         to_inv = np.zeros([nK,nK,nDm,nDm],dtype=complex)
         for d_o in range(nDir):                 #boucle sur les directions
-            Pdm = np.zeros ([nK,nK,1,nDm],dtype=complex)
-            Pl = np.zeros ([nK,nK,1,nL],dtype=complex)
+            Pdm = np.zeros ([nK,nK,nDm],dtype=complex)
+            Pl = np.zeros ([nK,nK,nL],dtype=complex)
             fx = self.theta_x[d_o]*kx
             fy = self.theta_y[d_o]*ky
             for j in range(nDm):                #boucle sur les dm
-                Pdm[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
-            Pdm = np.matmul(Pdm,N)
-            Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
+                Pdm[index,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
+            #Pdm = np.matmul(Pdm,N)
+            Pdm_t = np.conj(Pdm.transpose(0,2,1))
             for j in range(nL):                 #boucle sur les couches atm
-                Pl[:,:,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx+fy))
+                Pl[index,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
             mat1 += np.matmul(Pdm_t,Pl)*self.theta_w[d_o] 
             to_inv += np.matmul(Pdm_t,Pdm)*self.theta_w[d_o]
             
-        mat2 = to_inv
+        mat2 = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                u,s,v = np.linalg.svd(to_inv[x,y,:,:])
-                P_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
-                mat2[x,y,:,:] = np.matmul(v.transpose(),np.matmul(P_inv,u.transpose()))
+                if index[x,y] == True :
+                    """
+                    u,s,v = np.linalg.svd(to_inv[x,y,:,:])
+                    P_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
+                    mat2[x,y,:,:] = np.matmul(np.transpose(v),np.matmul(P_inv,np.transpose(u)))
+                    """
+                    mat2[x,y,:,:] = np.linalg.inv(to_inv[x,y,:,:])
+        #print(np.matmul(to_inv,mat2)[4])
         
         Popt = np.matmul(mat2,mat1)
         
         return Popt
     
     def finalReconstructor(self,kx,ky):
-        Wtomo = self.tomographicReconstructor(kx,ky)
-        Popt = self.optimalProjector(kx,ky)
-        self.W = np.matmul(Popt,Wtomo)
+        self.Wtomo = self.tomographicReconstructor(kx,ky)
+        self.Popt = self.optimalProjector(kx,ky)
+        self.W = np.matmul(self.Popt,self.Wtomo)
         
         return self.W
             
@@ -806,12 +816,12 @@ class spatialFrequency:
             # Interpolate the PSF to set the PSF pixel scale
             psf    = FourierUtils.interpolateSupport(psf,fovInPixel)
             
-        return psf,otfAO, psd , spatio , noise , self.Cphi
+        return psf,otfAO, psd , spatio , noise , self.Cphi, self.Wtomo , self.Popt
     
     
 def demo():
     fao = spatialFrequency("Parameters.txt")
-    psf,otfAO,psd,spatio,noise, Cphi = fao.getPSF();
+    psf,otfAO,psd,spatio,noise, Cphi , Wtomo , Popt = fao.getPSF();
     
     plt.figure()
     plt.title('PSF')
