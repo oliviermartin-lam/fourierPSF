@@ -208,7 +208,6 @@ class spatialFrequency:
         self.atm = atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0)
         self.atm.wvl = self.src.wvl
         
-        
 #%% RECONSTRUCTOR DEFINITION    
     def reconstructionFilter(self,kx,ky):
         """
@@ -249,9 +248,14 @@ class spatialFrequency:
         #Wphi = self.atm.spectrum(k);
         nL = len(self.h_recons)
         nGs = self.nGs
-        Alpha = [self.zenith,self.azimuth] # angles étoiles guides
+        #Alpha = [self.zenith,self.azimuth] # angles étoiles guides
+        Alpha = np.zeros([2,nGs])
+        pdb.set_trace()
+        for j in range(nGs):
+            Alpha[0,j] = self.gs[j].direction[0]
+            Alpha[1,j] = self.gs[j].direction[1]
         arcsec2rad = np.pi/180/3600
-        Alpha = np.array(Alpha)*arcsec2rad
+        Alpha = np.array(Alpha)
             
         # Measure matrix
         i    = complex(0,1)
