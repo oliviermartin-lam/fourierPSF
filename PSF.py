@@ -66,7 +66,7 @@ class spatialFrequency:
         self.kx,self.ky = np.meshgrid(kx,ky)
                         
         # DEFINE THE RECONSTRUCTOR
-        if self.nGs ==0:
+        if self.nGs <2:
             self.reconstructionFilter(self.kx,self.ky)
         else:
             self.finalReconstructor(self.kx,self.ky)
@@ -317,18 +317,19 @@ class spatialFrequency:
             
         to_inv = np.matmul(np.matmul(MP,Cphi),MP_t)+Cb 
         inv = np.zeros(to_inv.shape,dtype=complex)
+        inv1 = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
                 if index[x,y] == True :
-                    """
                     u,s,v = np.linalg.svd(to_inv[x,y,:,:])
                     Cs_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
-                    inv[x,y,:,:] = np.matmul(u,np.matmul(Cs_inv,v))
-                    """
+                    inv1[x,y,:,:] = np.matmul(u,np.matmul(Cs_inv,v))
                     inv[x,y,:,:] = np.linalg.inv(to_inv[x,y,:,:])
         
         #print(np.matmul(to_inv,inv)[4])
+        
+        self.Wtomob = np.matmul(np.matmul(Cphi,MP_t),inv1)
         
         Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
         
@@ -350,16 +351,16 @@ class spatialFrequency:
         mat1 = np.zeros([nK,nK,nDm,nL],dtype=complex)
         to_inv = np.zeros([nK,nK,nDm,nDm],dtype=complex)
         for d_o in range(nDir):                 #boucle sur les directions
-            Pdm = np.zeros ([nK,nK,nDm],dtype=complex)
-            Pl = np.zeros ([nK,nK,nL],dtype=complex)
+            Pdm = np.zeros ([nK,nK,1,nDm],dtype=complex)
+            Pl = np.zeros ([nK,nK,1,nL],dtype=complex)
             fx = self.theta_x[d_o]*kx
             fy = self.theta_y[d_o]*ky
             for j in range(nDm):                #boucle sur les dm
-                Pdm[index,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
+                Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             #Pdm = np.matmul(Pdm,N)
-            Pdm_t = np.conj(Pdm.transpose(0,2,1))
+            Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
             for j in range(nL):                 #boucle sur les couches atm
-                Pl[index,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
+                Pl[index,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
             mat1 += np.matmul(Pdm_t,Pl)*self.theta_w[d_o] 
             to_inv += np.matmul(Pdm_t,Pdm)*self.theta_w[d_o]
             
@@ -371,9 +372,10 @@ class spatialFrequency:
                     """
                     u,s,v = np.linalg.svd(to_inv[x,y,:,:])
                     P_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
-                    mat2[x,y,:,:] = np.matmul(np.transpose(v),np.matmul(P_inv,np.transpose(u)))
+                    mat2[x,y,:,:] = np.matmul(u,np.matmul(P_inv,v))
                     """
-                    mat2[x,y,:,:] = np.linalg.inv(to_inv[x,y,:,:])
+                    mat2[x,y,:,:] = np.linalg.pinv(to_inv[x,y,:,:])
+        pdb.set_trace()
         #print(np.matmul(to_inv,mat2)[4])
         
         Popt = np.matmul(mat2,mat1)
@@ -495,7 +497,7 @@ class spatialFrequency:
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc    
-        if self.nGs == 0:
+        if self.nGs < 2:
             i  = complex(0,1)
             k  = np.hypot(kx,ky)
             d  = self.tel.D/(self.nActuator-1)
@@ -546,7 +548,7 @@ class spatialFrequency:
                 index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
             elif aoFilter == 'circle':
                 index  = np.hypot(kx,ky) <= self.kc  
-            if self.nGs == 0:        
+            if self.nGs < 2:        
                 psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
                 
             else:
@@ -555,9 +557,12 @@ class spatialFrequency:
                 nDm  = len(self.h_dm)
                 i    = complex(0,1)
                 PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
+                Beta = [self.src.direction[0],self.src.direction[1]]
                 
-                fx = self.theta_x[0]*kx   #theta[0] = source scientifique
-                fy = self.theta_y[0]*ky
+                #fx = self.theta_x[0]*kx   #theta[0] = source scientifique
+                #fy = self.theta_y[0]*ky
+                fx = Beta[0]*kx
+                fy = Beta[1]*ky
                 for j in range(nDm):                #boucle sur les dm
                     PthDM[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
                 self.PthDM = PthDM
@@ -569,7 +574,7 @@ class spatialFrequency:
                 for x in range(nK):
                     for y in range(nK):
                         if index[x,y] == True:
-                            psd[x,y] = np.matmul(PW[x,y,:,:],np.matmul(self.Cb[x,y,:,:],PW_t[x,y,:,:]))
+                            psd[x,y] = np.dot(PW[x,y,:,:],np.dot(self.Cb[x,y,:,:],PW_t[x,y,:,:]))
                 
 
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))*self.noiseGain
@@ -585,7 +590,7 @@ class spatialFrequency:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc     
             
-        if self.nGs == 0:        
+        if self.nGs == 1:        
             F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
             Wphi = self.atm.spectrum(np.hypot(kx,ky))
         
@@ -608,7 +613,7 @@ class spatialFrequency:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc       
         
-        if self.nGs == 0:
+        if self.nGs < 2:
             heights = self.atm.heights
             weights = self.atm.weights
             A       = 0*kx
@@ -629,6 +634,7 @@ class spatialFrequency:
                 psd[index] = (1 + abs(F)**2*self.h2[index] 
                 - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
                 
+                
         else:
             deltaT = self.latency+self.samplingTime
             k = np.hypot(kx,ky)
@@ -647,13 +653,13 @@ class spatialFrequency:
                 for g in range(self.nGs):
                     fx = self.gs[g].direction[0,0]*kx
                     fy = self.gs[g].direction[1,0]*ky
-                    MPaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2**np.pi*Hs[h]*(fx[index]+fy[index]))
+                    MPaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2*np.pi*Hs[h]*(fx[index]+fy[index]))
             
             PthL = np.zeros([nK,nK,1,nH],dtype=complex)
             fx = self.src.direction[0,0]*kx
             fy = self.src.direction[1,0]*ky
             for j in range(nH):
-                PthL[:,:,0,j] = np.exp(i*2*np.pi*Hs[j]*((self.theta_x[0]*kx+self.theta_y[0]*ky)-(deltaT*self.wSpeed[j]*(wDir_x[j]*kx+wDir_y[j]*ky))))
+                PthL[:,:,0,j] = np.exp(i*2*np.pi*Hs[j]*((fx+fy)-(deltaT*self.wSpeed[j]*(wDir_x[j]*kx+wDir_y[j]*ky))))
             
             PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm):                #boucle sur les dm
@@ -663,7 +669,7 @@ class spatialFrequency:
             for x in range(nK):
                 for y in range(nK):
                     if index[x,y] == True:
-                        proj[x,y] = PthL[x,y]-np.matmul(PthDM[x,y,:,:],np.matmul(self.W[x,y,:,:],MPaL[x,y,:,:]))
+                        proj[x,y] = PthL[x,y]-np.dot(PthDM[x,y,:,:],np.dot(self.W[x,y,:,:],MPaL[x,y,:,:]))
             proj_t = np.conj(proj.transpose(0,1,3,2))
             
             psd = np.matmul(proj,np.matmul(self.Cphi,proj_t))
@@ -816,12 +822,18 @@ class spatialFrequency:
             # Interpolate the PSF to set the PSF pixel scale
             psf    = FourierUtils.interpolateSupport(psf,fovInPixel)
             
-        return psf,otfAO, psd , spatio , noise , self.Cphi, self.Wtomo , self.Popt
+        if self.nGs>1:
+            return psf,otfAO, psd , spatio , noise , self.Cphi, self.Wtomo , self.Wtomob , self.Popt , self.W
+        else:
+            return psf,otfAO, psd , spatio , noise
     
     
 def demo():
     fao = spatialFrequency("Parameters.txt")
-    psf,otfAO,psd,spatio,noise, Cphi , Wtomo , Popt = fao.getPSF();
+    if fao.nGs>1:
+        psf,otfAO,psd,spatio,noise,Cphi,Wtomo,Wtomob,Popt,W= fao.getPSF();
+    else:
+        psf,otfAO,psd,spatio,noise= fao.getPSF();
     
     plt.figure()
     plt.title('PSF')

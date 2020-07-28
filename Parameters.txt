@@ -65,17 +65,16 @@ height ; 0 ; [m (0 if infinite)]
 wvl ; 500 ; [nm]
 zenith ; 10 ; [arcseconds]
 #x
-azimuth ; 240 ; [arcseconds]
+azimuth ; 270 ; [arcseconds]
 #y
 height ; 0 ; [m (0 if infinite)]
-
 
 %%% A PRIORI ATMOSPHERE %%%
 
 %%% ATMOSPHERE RECONSTRUITE %%%
 h_dm ; 0 ; 8000 ; [altitude des DMs]
 h_recons ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [Altitude des couches reconstruites]
-theta_x ; 10. ; 0.0 ;  [position d'optimisation x]
-theta_y ; 20.0 ; 0.0 ;  [position d'optimisation y]
-theta_w ; 0.33 ; 0.67 ; [poids]
-condmax ; 30 ; [conditionnement max acceptable dans l'inversion pour le calcul de Popt]
+theta_x ; 10. ; 10.0 ; 0 ; 0 ;  [position d'optimisation x]
+theta_y ; 10.0 ; 0.0 ; 10 ; 0 ;  [position d'optimisation y]
+theta_w ; 1 ; 1 ; 1 ; 1 ; [poids]
+condmax ; 300 ; [conditionnement max acceptable dans l'inversion pour le calcul de Popt]
