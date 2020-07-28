@@ -1,30 +1,18 @@
-%%% ATMOSPHERE %%%
+%%% TRUE ATMOSPHERE %%%
 r0 ; 0.16 ; [m]
 L0 ; 10 ; [m]
-wvl ; 500 ; [nm]
+wavelenght ; 500 ; [nm]
 
-%% Layer 1 %%
-weights ; 0.5 ; [N]
-heights ; 500. ; [m]
-wSpeed ; 5. ; [m/s]
-wDir ; 0. ; [angle]
-
-%% Layer 2 %%
-weights ; 0.2 ; [N]
-heights ; 4000 ; [m]
-wSpeed ; 10. ; [m/s]
-wDir ; 30 ; [angle]
-
-%% Layer 3 %%
-weights ; 0.3 ; [N]
-heights ; 10000 ; [m]
-wSpeed ; 15. ; [m/s]
-wDir ; 60. ; [angle]
+%% Layer 1-10 %%
+weights ; 0.41 ; 0.16 ; 0.1 ; 0.09 ; 0.08 ; 0.05 ; 0.045 ; 0.035 ; 0.02 ; 0.01 ; [N]
+heights ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [m]
+wSpeed ; 20. ; 20. ; 4.5 ; 15.6 ; 25. ; 10.2 ; 8.3 ; 20 ; 10 ; 20 ; [m/s]
+wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 085 ; 180 ; 0 ; 180 ; [angle]
 
 
 %%% TELESCOPE %%%
 D ; 8 ; [m]
-zenith_angle ; 0 ; [degrees]
+zenit_angle ; 0 ; [degrees]
 obsRatio ; 0.14 ; [rate %]
 resolution ; 240 ; [number of pixels]
 path_pupil ; "vlt_pup_240.fits" ; [fichier.fits]
@@ -37,12 +25,12 @@ noiseVariance ; 0.0001 ;
 loopGain ; 1 ; 
 samplingTime ; 1 ; [ms]
 latency ; 1 ; [ms]
-resAO ; 41 ; 
+resAO ; 41 ; #odd
 psInMas ; 10 ; 
 fovInArcsec ; 3 ; [field of view in arcseconds]
 
 %%% SCIENTIFIC SOURCE %%%
-wvl ; 1650 ; [nm]
+wvl ; 500 ; [nm]
 zenith ; 0 ; [arcseconds]
 #x
 azimuth ; 0 ; [arcseconds]
@@ -55,34 +43,38 @@ zenith ; 0 ; [arcseconds]
 #x
 azimuth ; 0 ; [arcseconds]
 #y
-height ; 0 ; [m (0 if infinite)]
+height ; 80000 ; [m (0 if infinite)]
 
 %%% GS 2 %%%
 wvl ; 1650 ; [nm]
-zenith ; 10 ; [arcseconds]
+zenith ; 60 ; [arcseconds]
 #x
 azimuth ; 0 ; [arcseconds]
 #y
-height ; 0 ; [m (0 if infinite)]
-
+height ; 80000 ; [m (0 if infinite)]
 
 %%% GS 3 %%%
 wvl ; 1650 ; [nm]
-zenith ; 10 ; [arcseconds]
+zenith ; 180 ; [arcseconds]
 #x
-azimuth ; 180 ; [arcseconds]
+azimuth ; 0 ; [arcseconds]
 #y
-height ; 0 ; [m (0 if infinite)]
+height ; 90000 ; [m (0 if infinite)]
 
-
-%%% TRUE ATMOSPHERE %%%
+%%% GS 4 %%%
+wvl ; 1650 ; [nm]
+zenith ; 240 ; [arcseconds]
+#x
+azimuth ; 0 ; [arcseconds]
+#y
+height ; 80000 ; [m (0 if infinite)]
 
 %%% A PRIORI ATMOSPHERE %%%
 
 %%% ATMOSPHERE RECONSTRUITE %%%
-h_dm ; 500 ; 4000 ; 10000 ; [altitude des DMs]
-h_recons ; 500 ; 4000 ; 10000 ; [Altitude des couches reconstruites]
-theta_x ; 0.0 ; 0.0 ; 0.0 ; [position d'optimisation x]
-theta_y ; 20.0 ; 20.0 ; 20.0 ; [position d'optimisation y]
-theta_w ; 0.33 ; 0.33 ; 0.33 ; [poids]
+h_dm ; 0 ; 8000 ; [altitude des DMs]
+h_recons ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [Altitude des couches reconstruites]
+theta_x ; 10. ; 0.0 ;  [position d'optimisation x]
+theta_y ; 20.0 ; 0.0 ;  [position d'optimisation y]
+theta_w ; 0.33 ; 0.67 ; [poids]
 condmax ; 30 ; [conditionnement max acceptable dans l'inversion pour le calcul de Popt]

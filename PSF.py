@@ -66,7 +66,7 @@ class spatialFrequency:
         self.kx,self.ky = np.meshgrid(kx,ky)
                         
         # DEFINE THE RECONSTRUCTOR
-        if self.nGs ==1:
+        if self.nGs ==0:
             self.reconstructionFilter(self.kx,self.ky)
         else:
             self.finalReconstructor(self.kx,self.ky)
@@ -84,6 +84,7 @@ class spatialFrequency:
         
         self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
         self.theta_x = [] ; self.h_dm = [] ; self.h_recons = [] ; self.theta_y = [] ; self.theta_w = []
+        self.wvlSources = [] ; self.zenith = [] ; self.azimuth = [] ; self.heightSources = []
         
         for line in fichier:
             keys = line.split(';')
@@ -121,6 +122,18 @@ class spatialFrequency:
             elif re.search("h_recons",keys[0])!=None:
                 for i in range(len(keys)-2):
                     self.h_recons.append(keys[i+1])
+            elif re.search("wvl",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.wvlSources.append(keys[i+1])
+            elif re.search("zenith",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.zenith.append(keys[i+1])
+            elif re.search("azimuth",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.azimuth.append(keys[i+1])
+            elif re.search("height",keys[0])!=None:
+                for i in range(len(keys)-2):
+                    self.heightSources.append(keys[i+1])
             elif len(keys) == 3 :
                 values.append(keys[1])
         values = list(map(float,values))
@@ -133,6 +146,10 @@ class spatialFrequency:
         self.theta_w=list(map(float,self.theta_w))
         self.h_dm=list(map(float,self.h_dm))
         self.h_recons=list(map(float,self.h_recons))
+        self.wvlSources=list(map(float,self.wvlSources))
+        self.zenith=list(map(float,self.zenith))
+        self.azimuth=list(map(float,self.azimuth))
+        self.heightSources=list(map(float,self.heightSources))
         fichier.close()
         
         if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
@@ -144,6 +161,9 @@ class spatialFrequency:
         
         self.weights=np.array(self.weights)
         self.heights=np.array(self.heights)
+        self.theta_x=np.array(self.theta_x)*60/206265
+        self.theta_y=np.array(self.theta_y)*60/206265
+        self.wDir=np.array(self.wDir)
         self.weights=self.weights/np.sum(self.weights)
         self.theta_w = self.theta_w/np.sum(self.theta_w)
 
@@ -164,23 +184,29 @@ class spatialFrequency:
         self.fovInArcsec = values[14+4*self.nbLayers]
         self.condmax = values[-1]
         
-        self.nGs = int(((len(values)-(15+4*self.nbLayers))/5)+1)
-        #self.nGs = 1
+        self.nGs = len(self.wvlSources) - 1
+        #self.nGs = 0
         
-        self.src = [] ; self.wvlSources = [] ; self.zenith = [] ; self.azimuth = [] ; self.heightSources = []
+        self.gs = []
         
         self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
         
-        
-        for n in range(self.nGs):
+        for n in range(self.nGs + 1):
+            """
             self.wvlSources.append(values[15+4*self.nbLayers+n*4]*1e-9)
             self.zenith.append(values[16+4*self.nbLayers+n*4])
             self.azimuth.append(values[17+4*self.nbLayers+n*4])
             self.heightSources.append(values[18+4*self.nbLayers+n*4]*self.tel.airmass)
-            self.src.append(source(self.wvlSources[n],self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True))
+            """
+            if n == 0:
+                self.src = source(self.wvlSources[n]*1e-9,self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True)
+                #source scientifique
+            else:
+                self.gs.append(source(self.wvlSources[n]*1e-9,self.zenith[n],self.azimuth[n],self.heightSources[n],n,verbose=True))
+                #etoiles guides
         
         self.atm = atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0)
-        self.atm.wvl = self.src[0].wvl
+        self.atm.wvl = self.src.wvl
         
         
 #%% RECONSTRUCTOR DEFINITION    
@@ -221,19 +247,20 @@ class spatialFrequency:
         k    = np.hypot(kx,ky)     
         nK   = len(k[0,:])
         #Wphi = self.atm.spectrum(k);
-        nL = self.nbLayers
+        nL = len(self.h_recons)
         nGs = self.nGs
         Alpha = [self.zenith,self.azimuth] # angles étoiles guides
-        Alpha = np.array(Alpha)
+        arcsec2rad = np.pi/180/3600
+        Alpha = np.array(Alpha)*arcsec2rad
             
         # Measure matrix
         i    = complex(0,1)
         d    = self.tel.D/(self.nActuator-1)   #taille sous-pupille   
-        Sx   = 2*i*np.pi*kx*d
-        Sy   = 2*i*np.pi*ky*d                        
-        Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky)) 
-        SxAv = Sx*Av
-        SyAv = Sy*Av
+        #Sx   = 2*i*np.pi*kx*d
+        #Sy   = 2*i*np.pi*ky*d                        
+        #Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky)) 
+        #SxAv = Sx*Av
+        #SyAv = Sy*Av
         index  = k <= self.kc
         
         #pdb.set_trace()
@@ -249,7 +276,7 @@ class spatialFrequency:
             M[index,j,j] = 2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])
         self.M = M
         # Projection matrix
-        P    = np.zeros([nK,nK,nGs,self.atm.nL],dtype=complex)
+        P    = np.zeros([nK,nK,nGs,nL],dtype=complex)
         
         for n in range(nL):
             for j in range(nGs):
@@ -258,6 +285,8 @@ class spatialFrequency:
                 P[index,j,n] = np.exp(i*2*np.pi*self.h_recons[n]*(fx[index]+fy[index]))
                 
         MP = np.matmul(M,P)
+        
+        print(MP.shape)
         
         MP_t = np.conj(MP.transpose(0,1,3,2))
         
@@ -279,31 +308,21 @@ class spatialFrequency:
         Cphi = np.zeros ([nK,nK,nL,nL],dtype=complex)
         for j in range(nL):
             atm_i = self.atm.slab(j)
-            Cphi[:,:,j,j] = atm_i.spectrum(k)
+            Cphi[:,:,j,j] = atm_i.spectrum(k)*FourierUtils.pistonFilter(self.tel.D,k)
         self.Cphi = Cphi
                 
             
-        to_inv = np.matmul(np.matmul(MP,Cphi),MP_t)+Cb # cherche fonction inverse
+        to_inv = np.matmul(np.matmul(MP,Cphi),MP_t)+Cb 
         inv = to_inv
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
                 if index[x,y] == True :
                     u,s,v = np.linalg.svd(to_inv[x,y,:,:])
-                    Cs_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0)) # definir condmax dans .txt
+                    Cs_inv = np.diag(np.where(s>(np.max(s)/self.condmax),1/s,0))
                     inv[x,y,:,:] = np.matmul(np.transpose(v),np.matmul(Cs_inv,np.transpose(u)))
         
         Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
-        
-        #Tomographic reconstructor
-        #self.SxAv = Sx*Av
-        #self.SyAv = Sy*Av
-        #gPSD = abs(self.SxAv)**2 + abs(self.SyAv)**2 + Wn/Wphi
-        
-        #self.Rt = inv(inv(MP.T*Wn)*MP + inv(Wphi))*MP.T*inv(Wn)
-                
-        # Manage NAN value if any   
-        #self.Rt[np.isnan(self.Rt)] = 0
         
         return Wtomo
         
@@ -462,7 +481,7 @@ class spatialFrequency:
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc    
-        if self.nGs == 1:
+        if self.nGs == 0:
             i  = complex(0,1)
             k  = np.hypot(kx,ky)
             d  = self.tel.D/(self.nActuator-1)
@@ -513,7 +532,7 @@ class spatialFrequency:
                 index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
             elif aoFilter == 'circle':
                 index  = np.hypot(kx,ky) <= self.kc  
-            if self.nGs == 1:        
+            if self.nGs == 0:        
                 psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
                 
             else:
@@ -524,7 +543,7 @@ class spatialFrequency:
                 PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
                 
                 fx = self.theta_x[0]*kx   #theta[0] = source scientifique
-                fy = self.theta_y[1]*ky
+                fy = self.theta_y[0]*ky
                 for j in range(nDm):                #boucle sur les dm
                     PthDM[:,:,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx+fy))
                 self.PthDM = PthDM
@@ -552,7 +571,7 @@ class spatialFrequency:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc     
             
-        if self.nGs == 1:        
+        if self.nGs == 0:        
             F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
             Wphi = self.atm.spectrum(np.hypot(kx,ky))
         
@@ -575,12 +594,12 @@ class spatialFrequency:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc       
         
-        if self.nGs == 1:
+        if self.nGs == 0:
             heights = self.atm.heights
             weights = self.atm.weights
             A       = 0*kx
-            if sum(sum(self.src[0].direction))!=0:
-                th  = self.src[0].direction[:,iSrc]
+            if sum(sum(self.src.direction))!=0:
+                th  = self.src.direction[:,iSrc]
                 for l in np.arange(0,self.atm.nL):                
                     red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                     A   = A + weights[l]*np.exp(complex(0,1)*red)            
@@ -605,22 +624,22 @@ class spatialFrequency:
             nDm  = len(self.h_dm)
             i    = complex(0,1)
             d    = self.tel.D/(self.nActuator-1)
-            
-            xx = self.src[0]
+            wDir_x = np.cos(self.wDir*np.pi/180)
+            wDir_y = np.sin(self.wDir*np.pi/180)
             
             MPaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
             for h in range(nH):
-                www = np.sinc(self.samplingTime*self.wSpeed[h]*(np.cos(self.wDir[h]*np.pi/180)*kx+np.sin(self.wDir[h]*np.pi/180)*ky))
+                www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*kx+wDir_y[h]*ky))
                 for g in range(self.nGs):
-                    #fx = self.theta_x[g]*kx
-                    #fy = self.theta_y[g]*ky
-                    fx = 0*kx
-                    fy = 0*ky
+                    fx = self.gs[g].direction[0,0]*kx
+                    fy = self.gs[g].direction[1,0]*ky
                     MPaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2**np.pi*Hs[h]*(fx[index]+fy[index]))
             
             PthL = np.zeros([nK,nK,1,nH],dtype=complex)
+            fx = self.src.direction[0,0]*kx
+            fy = self.src.direction[1,0]*ky
             for j in range(nH):
-                PthL[:,:,0,j] = np.exp(i*2*np.pi*Hs[j]*((self.theta_x[0]*kx+self.theta_y[0]*ky)-(deltaT*self.wSpeed[j]*(np.cos(self.wDir[j]*np.pi/180)*kx+np.sin(self.wDir[j]*np.pi/180)*ky))))
+                PthL[:,:,0,j] = np.exp(i*2*np.pi*Hs[j]*((self.theta_x[0]*kx+self.theta_y[0]*ky)-(deltaT*self.wSpeed[j]*(wDir_x[j]*kx+wDir_y[j]*ky))))
             
             PthDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm):                #boucle sur les dm
@@ -653,8 +672,8 @@ class spatialFrequency:
         heights = self.atm.heights
         weights = self.atm.weights
         A       = 0*kx
-        if sum(sum(self.src[0].direction))!=0:
-            th  = self.src[0].direction[:,iSrc]
+        if sum(sum(self.src.direction))!=0:
+            th  = self.src.direction[:,iSrc]
             for l in np.arange(0,self.atm.nL):
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
@@ -696,7 +715,7 @@ class spatialFrequency:
         """
         #self.atm.wvl = self.src.wvl[iSrc]
         # Constants
-        wvl    = self.src[0].wvl[iSrc]
+        wvl    = self.src.wvl[iSrc]
         rad2nm = 1e9*wvl/2/np.pi        
         kx     = self.kx
         ky     = self.ky
@@ -743,7 +762,7 @@ class spatialFrequency:
         psInMas = self.psInMas
         fovInArcsec = self.fovInArcsec
         dk    = 2*self.kc/self.resAO
-        wvl   = self.src[0].wvl[iSrc]
+        wvl   = self.src.wvl
         lonD  = (1e3*180*3600/np.pi*wvl/self.tel.D)
         if nyquistSampling == True:
             nqSmpl = 1
@@ -788,7 +807,7 @@ class spatialFrequency:
     
 def demo():
     fao = spatialFrequency("Parameters.txt")
-    psf,otfAO,psd,spatio,noise,Cphi = fao.getPSF();
+    psf,otfAO,psd,spatio,noise, Cphi = fao.getPSF();
     
     plt.figure()
     plt.title('PSF')
