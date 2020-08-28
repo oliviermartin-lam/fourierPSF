@@ -28,7 +28,7 @@ D           = 8 #m
 zenith_angle= 0 #degrees
 obsRatio    = 0.14 #percent
 resolution  = 240 #number of pixels
-path_pupil  = "vlt_pup_240.fits" # [fichier.fits]
+path_pupil  = "_calib_/vlt_pup_240.fits" # [fichier.fits]
 
 
 #%% AO #%%

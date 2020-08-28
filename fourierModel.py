@@ -8,13 +8,16 @@ Created on Thu Aug 16 15:00:44 2018
 import numpy as np
 import numpy.fft as fft
 import matplotlib.pyplot as plt
-import FourierUtils
 import sys
-from  telescope import telescope
-from  atmosphere import atmosphere
-from  source import source
 import re
 import scipy.special as spc
+import sys
+
+import FourierUtils
+from telescope import telescope
+from atmosphere import atmosphere
+from source import source
+
 import pdb
 
 def fprintf(stream, format_spec, *args):
@@ -60,53 +63,37 @@ class fourierModel:
         return s
     
     def parameters(self,file):
-        
+                    
         if file.find(".py") > 0:
-    
-            import Parameters
+            # run the .py file
+            runfile(file)
             
             # Telescope
-            self.D = D
-            self.zenith_angle = zenith_angle
-            self.obsRatio = obsRatio
-            self.resolution = resolution
-            #self.path_pupil = path_pupil
-            self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution)
+            self.D              = D
+            self.zenith_angle   = zenith_angle
+            self.obsRatio       = obsRatio
+            self.resolution     = resolution
+            self.path_pupil     = path_pupil
             
+            # Atmosphere
+            self.wvlAtm         = wvlAtm*1e-9
+            self.r0             = r0
+            self.L0             = L0
+            self.weights        = np.array(weights)
+            self.heights        = np.array(heights)
+            self.wSpeed         = np.array(wSpeed)
+            self.wDir           = np.array(wDir)
             
-            # True atmosphere
-            #self.atm = atmosphere(wvlAtm,(r0*self.tel.airmass**(-3/5)),np.array(weights),(np.array(heights)*self.tel.airmass),np.array(wSpeed),np.array(wDir),L0)
-            self.atm = []
-            self.r0 = r0
-            self.L0 = L0
-            self.weights = np.array(weights)
-            self.heights = np.array(heights)
-            self.wSpeed = np.array(wSpeed)
-            self.wDir = np.array(wDir)
-            
-            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-                self.nbLayers = len(self.weights)
-            else:
-                print('%%%%%%%% ERROR %%%%%%%%')
-                print('Please enter all the parameters of the different layers')
-                print('\n')
-                
-            # scientific Sources
-            #pdb.set_trace()
-            self.src = []
-            self.nSrc = len(wvlSrc)
-            for n in range(self.nSrc):
-                self.src.append(source(wvlSrc[n]*1e-9,zenithSrc[n],azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
-                self.atm.append(atmosphere(wvlAtm*1e-9,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0))
-                self.atm[n].wvl = self.src[n].wvl
-            
-            self.h_recons = np.array(heights)
+            # Scientific sources
+            self.wvlSrc         = np.array(wvlSrc)
+            self.zenithSrc      = np.array(zenithSrc)
+            self.azimuthSrc     = np.array(azimuthSrc)
             
             # Guide stars
-            self.gs = []
-            self.nGs = len(wvlGs)
-            for n in range(self.nGs):
-                self.gs.append(source(wvlGs[n]*1e-9,zenithGs[n],azimuthGs[n],heightGs,n+1,"GUIDE STAR",verbose=True))
+            self.wvlGs          = np.array(wvlGs)
+            self.zenithGs       = np.array(zenithGs)
+            self.azimuthGs      = np.array(azimuthGs)
+            self.heightGs       = heightGs
             
             # AO parameters
             self.nActuator      = nActuator
@@ -117,14 +104,14 @@ class fourierModel:
             self.resAO          = resAO
             self.psInMas        = psInMas
             self.fovInArcsec    = fovInArcsec
-            self.condmax        = condmax
-            self.theta_x        = np.array(theta_x)/206265
-            self.theta_y        = np.array(theta_y)/206265
+            
+            # Optimization
+            self.theta_x        = np.array(theta_x)/206264.8
+            self.theta_y        = np.array(theta_y)/206264.8
             self.theta_w        = theta_w/np.sum(theta_w)
             self.h_dm           = h_dm
-           
-            
-            
+            self.condmax        = condmax
+
         elif file.find(".txt") > 0:
             # READ THE .TXT FILE
             fichier = open(file,"r")
@@ -140,7 +127,7 @@ class fourierModel:
                 keys = line.split(';')
                 if re.search("path_pupil",keys[0])!=None:
                     keys = line.split('"')
-                    path_pupil = keys[1]
+                    self.path_pupil = keys[1]
                 elif re.search("SCIENTIFIC SOURCE",keys[0])!=None:
                     src = 1
                 elif re.search("GUIDE STAR",keys[0])!=None:
@@ -206,74 +193,92 @@ class fourierModel:
                             self.heightGs.append(keys[i+1])
                 elif len(keys) == 3 :
                     values.append(keys[1])
+                    
             values          = list(map(float,values))
-            self.heights    = list(map(float,self.heights))
-            self.weights    = list(map(float,self.weights))
-            self.wSpeed     = list(map(float,self.wSpeed))
-            self.wDir       = list(map(float,self.wDir))
-            self.theta_x    = list(map(float,self.theta_x))
-            self.theta_y    = list(map(float,self.theta_y))
-            self.theta_w    = list(map(float,self.theta_w))
-            self.h_dm       = list(map(float,self.h_dm))
-            self.h_recons   = list(map(float,self.h_recons))
-            self.wvlSrc     = list(map(float,self.wvlSrc))
-            self.zenithSrc  = list(map(float,self.zenithSrc))
-            self.azimuthSrc = list(map(float,self.azimuthSrc))
-            self.heightSrc  = list(map(float,self.heightSrc))
-            self.wvlGs      = list(map(float,self.wvlGs))
-            self.zenithGs   = list(map(float,self.zenithGs))
-            self.azimuthGs  = list(map(float,self.azimuthGs))
-            self.heightGs   = list(map(float,self.heightGs))
+            
+            # Telescope
+            self.D              = values[3+4*self.nbLayers]
+            self.zenith_angle   = values[4+4*self.nbLayers]
+            self.obsRatio       = values[5+4*self.nbLayers]
+            self.resolution     = values[6+4*self.nbLayers]
+            
+            #Atmosphere
+            self.r0             = np.array(values[0])
+            self.L0             = values[1]
+            self.wvlAtm         = values[2]*1e-9
+            self.heights        = np.array(list(map(float,self.heights)))
+            self.weights        = np.array(list(map(float,self.weights)))
+            self.weights        = self.weights/np.sum(self.weights)
+            self.wSpeed         = np.array(list(map(float,self.wSpeed)))
+            self.wDir           = np.array(list(map(float,self.wDir)))
+            
+            # Scientific sources
+            self.wvlSrc        = np.array(list(map(float,self.wvlSrc)))
+            self.zenithSrc      = np.array( list(map(float,self.zenithSrc)))
+            self.azimuthSrc     = np.array(list(map(float,self.azimuthSrc)))
+            #self.heightSrc  = np.array(list(map(float,self.heightSrc)))
+            
+            # Guide stars
+            self.wvlGs         = np.array(list(map(float,self.wvlGs)))
+            self.zenithGs       = np.array(list(map(float,self.zenithGs)))
+            self.azimuthGs      = np.array(list(map(float,self.azimuthGs)))
+            self.heightGs       = list(map(float,self.heightGs))
+            
+            # AO parameters
+            self.nActuator      = values[7+4*self.nbLayers]
+            self.noiseVariance  = values[8+4*self.nbLayers]
+            self.loopGain       = values[9+4*self.nbLayers]
+            self.samplingTime   = values[10+4*self.nbLayers]*10e-4
+            self.latency        = values[11+4*self.nbLayers]*10e-4
+            self.resAO          = int(values[12+4*self.nbLayers])
+            self.psInMas        = values[13+4*self.nbLayers]
+            self.fovInArcsec    = values[14+4*self.nbLayers]
+            
+            # Optimization
+            self.theta_x        = np.array(list(map(float,self.theta_x)))/206264.8
+            self.theta_y        = np.array(list(map(float,self.theta_y)))/206264.8
+            self.theta_w        = np.array(list(map(float,self.theta_w)))
+            self.theta_w        = self.theta_w/np.sum(self.theta_w)
+            self.h_dm           = np.array(list(map(float,self.h_dm)))
+            self.h_recons       = np.array(list(map(float,self.h_recons)))
+            self.condmax        = values[-1]
+            
             fichier.close()
             
-            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-                self.nbLayers = len(self.weights)
-            else:
-                print('%%%%%%%% ERROR %%%%%%%%')
-                print('Please enter all the parameters of the different layers')
-                print('\n')
+        
+        #%% instantiating sub-classes
+        
+        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+            self.nbLayers = len(self.weights)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('Please enter all the parameters of the different layers')
+            print('\n')
+                                
+        # Telescope
+        self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,self.path_pupil)
+        
+        # Strechning factor (LGS case)
+        self.heights  = self.heights*self.tel.airmass
+        self.heightGs = self.heightGs*self.tel.airmass # LGS height
+        if self.heightGs > 0:
+            self.heights = self.heights/(1 - self.heights/self.heightGs)
+
+        # True atmosphere
+        self.atm = atmosphere(self.wvlAtm,self.r0*self.tel.airmass**(-3/5),self.weights,self.heights,self.wSpeed,self.wDir,self.L0)
+        self.h_recons = self.heights
+
+        # Scientific Sources
+        self.src = []
+        self.nSrc = len(self.wvlSrc)
+        for n in range(self.nSrc):
+            self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
             
-            self.weights=np.array(self.weights)
-            self.heights=np.array(self.heights)
-            self.theta_x=np.array(self.theta_x)/206265
-            self.theta_y=np.array(self.theta_y)/206265
-            self.wDir=np.array(self.wDir)
-            self.weights=self.weights/np.sum(self.weights)
-            self.theta_w = self.theta_w/np.sum(self.theta_w)
-    
-            self.r0 = np.array(values[0])
-            self.L0 = values[1]
-            self.wvlAtm = values[2]*1e-9
-            self.D = values[3+4*self.nbLayers]
-            self.zenith_angle = values[4+4*self.nbLayers]
-            self.obsRatio = values[5+4*self.nbLayers]
-            self.resolution = values[6+4*self.nbLayers]
-            self.nActuator = values[7+4*self.nbLayers]
-            self.noiseVariance = values[8+4*self.nbLayers]
-            self.loopGain = values[9+4*self.nbLayers]
-            self.samplingTime = values[10+4*self.nbLayers]*10e-4
-            self.latency = values[11+4*self.nbLayers]*10e-4
-            self.resAO = int(values[12+4*self.nbLayers])
-            self.psInMas = values[13+4*self.nbLayers]
-            self.fovInArcsec = values[14+4*self.nbLayers]
-            self.condmax = values[-1]
-            
-            self.nSrc = len(self.wvlSrc)
-            self.nGs = len(self.wvlGs)
-            
-            self.gs = [] ; self.src = [] ; self.atm = []
-            
-            self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
-            
-            for n in range(self.nSrc):
-                self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],self.heightSrc[n],n+1,"SCIENTIFIC STAR",verbose=True))
-                self.atm.append(atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0))
-                self.atm[n].wvl = self.src[n].wvl
-            
-            for n in range(self.nGs):
-                self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs[n],n+1,"GUIDE STAR",verbose=True))
-            
-            #self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
+        # Guide stars
+        self.gs = []
+        self.nGs = len(self.wvlGs)
+        for n in range(self.nGs):
+            self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
         
 #%% RECONSTRUCTOR DEFINITION    
     def reconstructionFilter(self,kx,ky):
@@ -344,7 +349,7 @@ class fourierModel:
         Cphi = np.zeros ([nK,nK,nL,nL],dtype=complex)
         cte = (24*spc.gamma(6/5)/5)**(5/6)*(spc.gamma(11/6)**2./(2.*np.pi**(11/3)))
         for j in range(nL):
-            Cphi[:,:,j,j] = self.atmj.layer[j].weight * self.atmj.r0**(-5/3)*cte*(k**2 + 1/self.atmj.L0**2)**(-11/6)\
+            Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
             *FourierUtils.pistonFilter(self.tel.D,k)
         self.Cphi = Cphi
                 
@@ -432,12 +437,12 @@ class fourierModel:
         """
         
         i  = complex(0,1)
-        vx = self.atmj.wSpeed*np.cos(self.atmj.wDir*np.pi/180)
-        vy = self.atmj.wSpeed*np.sin(self.atmj.wDir*np.pi/180)   
+        vx          = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
+        vy          = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)   
         nPts        = kx.shape[0]
         thetaWind   = np.linspace(0, 2*np.pi-2*np.pi/nTh,nTh)
         costh       = np.cos(thetaWind);
-        weights     = self.atmj.weights
+        weights     = self.atm.weights
         Ts          = self.samplingTime
         td          = self.latency        
         delay       = np.floor(td/Ts)
@@ -467,7 +472,7 @@ class fourierModel:
         
         
         # Get transfer functions                                        
-        for l in np.arange(0,self.atmj.nL):
+        for l in np.arange(0,self.atm.nL):
             for iTheta in np.arange(0,nTh):
                 fi      = -vx[l]*kx*costh[iTheta] - vy[l]*ky*costh[iTheta]
                 idx     = abs(fi) <1e-7;
@@ -518,7 +523,7 @@ class fourierModel:
             index  = np.hypot(kxExt,kyExt) > self.kc;
             
         kExt       = np.hypot(kxExt[index],kyExt[index])
-        psd[index] = self.atmj.spectrum(kExt)
+        psd[index] = self.atm.spectrum(kExt)
         
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kxExt,kyExt))
     
@@ -571,7 +576,7 @@ class fourierModel:
             tmp[np.isnan(tmp)] = 0        
             psd[index]         = tmp[index]
         
-        return psd*self.atmj.r0**(-5/3)*0.0229 
+        return psd*self.atm.r0**(-5/3)*0.0229 
             
     def noisePSD(self,kx,ky,aoFilter='circle'):
         """NOISEPSD Noise error power spectrum density
@@ -715,18 +720,18 @@ class fourierModel:
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= self.kc        
         
-        heights = self.atmj.heights
-        weights = self.atmj.weights
+        heights = self.atm.heights
+        weights = self.atm.weights
         A       = 0*kx
         if sum(sum(self.srcj.direction))!=0:
             th  = self.srcj.direction[:,iSrc]
-            for l in np.arange(0,self.atmj.nL):
+            for l in np.arange(0,self.atm.nL):
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
         else:
             A = np.zeros(kx.shape)
         
-        Wphi       = self.atmj.spectrum(np.hypot(kx,ky))   
+        Wphi       = self.atm.spectrum(np.hypot(kx,ky))   
         psd[index] = A[index]*Wphi[index]
         
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
@@ -804,9 +809,10 @@ class fourierModel:
         fovInArcsec = self.fovInArcsec
         dk    = 2*self.kc/self.resAO
         PSF = []
+        
         for j in range(self.nSrc):
             self.srcj = self.src[j]
-            self.atmj = self.atm[j]
+            self.atm.wvl = self.srcj.wvl
             
             # DEFINE THE RECONSTRUCTOR
             if self.nGs <2:
@@ -867,7 +873,7 @@ class fourierModel:
         
     
 def demo():
-    fao = fourierModel("Parameters.txt")
+    fao = fourierModel("_parFile_/Parameters.py")
     PSF,nSrc = fao.getPSF()
     
     for j in range(nSrc):
