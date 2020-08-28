@@ -20,7 +20,7 @@ import pdb
 def fprintf(stream, format_spec, *args):
     stream.write(format_spec % args)
     
-class spatialFrequency:
+class fourierModel:
     """ Fourier class gathering the PSD calculation for PSF reconstruction. 
     """
     
@@ -867,7 +867,7 @@ class spatialFrequency:
         
     
 def demo():
-    fao = spatialFrequency("Parameters.txt")
+    fao = fourierModel("Parameters.txt")
     PSF,nSrc = fao.getPSF()
     
     for j in range(nSrc):
@@ -875,7 +875,7 @@ def demo():
         title = "PSF SCIENTIFIC SOURCE {}".format(j+1)
         plt.title(title)
         plt.imshow(np.log10(PSF[j]))
-        plt.savefig('psf.png')
+        #plt.savefig('psf.png')
     
     return fao
 
