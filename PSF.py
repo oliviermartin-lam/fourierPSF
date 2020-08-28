@@ -22,17 +22,6 @@ def fprintf(stream, format_spec, *args):
     
 class spatialFrequency:
     """ Fourier class gathering the PSD calculation for PSF reconstruction. 
-    Inputs are:
-        - tel
-        - atm
-        - src
-        - nActuator
-        - noiseVariance
-        - loopGain
-        - samplingTime
-        - latency
-        - resAO
-                
     """
     
     # DEPENDANT VARIABLES DEFINITION
@@ -71,153 +60,220 @@ class spatialFrequency:
         return s
     
     def parameters(self,file):
-        fichier = open("Parameters.txt","r")
-        values = []
-        src = 0
         
-        self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
-        self.theta_x = [] ; self.h_dm = [] ; self.h_recons = [] ; self.theta_y = [] ; self.theta_w = []
-        self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
-        self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
-        
-        for line in fichier:
-            keys = line.split(';')
-            if re.search("path_pupil",keys[0])!=None:
-                keys = line.split('"')
-                path_pupil = keys[1]
-            elif re.search("SCIENTIFIC SOURCE",keys[0])!=None:
-                src = 1
-            elif re.search("GUIDE STAR",keys[0])!=None:
-                src = 2
-            elif re.search("weights",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.weights.append(keys[i+1])
-                    values.append(0)
-            elif re.search("heights",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.heights.append(keys[i+1])
-                    values.append(0)
-            elif re.search("wSpeed",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.wSpeed.append(keys[i+1])
-                    values.append(0)
-            elif re.search("wDir",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.wDir.append(keys[i+1])
-                    values.append(0)
-            elif re.search("theta_x",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.theta_x.append(keys[i+1])
-            elif re.search("theta_y",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.theta_y.append(keys[i+1])
-            elif re.search("theta_w",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.theta_w.append(keys[i+1])
-            elif re.search("h_dm",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.h_dm.append(keys[i+1])
-            elif re.search("h_recons",keys[0])!=None:
-                for i in range(len(keys)-2):
-                    self.h_recons.append(keys[i+1])
-            elif re.search("wvl",keys[0])!=None:
-                if src == 1 :
+        if file.find(".py") > 0:
+    
+            import Parameters
+            
+            # Telescope
+            self.D = D
+            self.zenith_angle = zenith_angle
+            self.obsRatio = obsRatio
+            self.resolution = resolution
+            #self.path_pupil = path_pupil
+            self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution)
+            
+            
+            # True atmosphere
+            #self.atm = atmosphere(wvlAtm,(r0*self.tel.airmass**(-3/5)),np.array(weights),(np.array(heights)*self.tel.airmass),np.array(wSpeed),np.array(wDir),L0)
+            self.atm = []
+            self.r0 = r0
+            self.L0 = L0
+            self.weights = np.array(weights)
+            self.heights = np.array(heights)
+            self.wSpeed = np.array(wSpeed)
+            self.wDir = np.array(wDir)
+            
+            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+                self.nbLayers = len(self.weights)
+            else:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('Please enter all the parameters of the different layers')
+                print('\n')
+                
+            # scientific Sources
+            #pdb.set_trace()
+            self.src = []
+            self.nSrc = len(wvlSrc)
+            for n in range(self.nSrc):
+                self.src.append(source(wvlSrc[n]*1e-9,zenithSrc[n],azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
+                self.atm.append(atmosphere(wvlAtm*1e-9,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0))
+                self.atm[n].wvl = self.src[n].wvl
+            
+            self.h_recons = np.array(heights)
+            
+            # Guide stars
+            self.gs = []
+            self.nGs = len(wvlGs)
+            for n in range(self.nGs):
+                self.gs.append(source(wvlGs[n]*1e-9,zenithGs[n],azimuthGs[n],heightGs,n+1,"GUIDE STAR",verbose=True))
+            
+            # AO parameters
+            self.nActuator      = nActuator
+            self.noiseVariance  = noiseVariance
+            self.loopGain       = loopGain
+            self.samplingTime   = samplingTime*1e-3
+            self.latency        = latency*1e-3
+            self.resAO          = resAO
+            self.psInMas        = psInMas
+            self.fovInArcsec    = fovInArcsec
+            self.condmax        = condmax
+            self.theta_x        = np.array(theta_x)/206265
+            self.theta_y        = np.array(theta_y)/206265
+            self.theta_w        = theta_w/np.sum(theta_w)
+            self.h_dm           = h_dm
+           
+            
+            
+        elif file.find(".txt") > 0:
+            # READ THE .TXT FILE
+            fichier = open(file,"r")
+            values = []
+            src = 0
+            
+            self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
+            self.theta_x = [] ; self.h_dm = [] ; self.h_recons = [] ; self.theta_y = [] ; self.theta_w = []
+            self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
+            self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
+            
+            for line in fichier:
+                keys = line.split(';')
+                if re.search("path_pupil",keys[0])!=None:
+                    keys = line.split('"')
+                    path_pupil = keys[1]
+                elif re.search("SCIENTIFIC SOURCE",keys[0])!=None:
+                    src = 1
+                elif re.search("GUIDE STAR",keys[0])!=None:
+                    src = 2
+                elif re.search("weights",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.wvlSrc.append(keys[i+1])
-                elif src==2:
+                        self.weights.append(keys[i+1])
+                        values.append(0)
+                elif re.search("heights",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.wvlGs.append(keys[i+1])
-            elif re.search("zenith",keys[0])!=None:
-                if src == 1 :
+                        self.heights.append(keys[i+1])
+                        values.append(0)
+                elif re.search("wSpeed",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.zenithSrc.append(keys[i+1])
-                else:
+                        self.wSpeed.append(keys[i+1])
+                        values.append(0)
+                elif re.search("wDir",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.zenithGs.append(keys[i+1])
-            elif re.search("azimuth",keys[0])!=None:
-                if src == 1 :
+                        self.wDir.append(keys[i+1])
+                        values.append(0)
+                elif re.search("theta_x",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.azimuthSrc.append(keys[i+1])
-                elif src == 2:
+                        self.theta_x.append(keys[i+1])
+                elif re.search("theta_y",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.azimuthGs.append(keys[i+1])
-            elif re.search("height",keys[0])!=None:
-                if src == 1 :
+                        self.theta_y.append(keys[i+1])
+                elif re.search("theta_w",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.heightSrc.append(keys[i+1])
-                else:
+                        self.theta_w.append(keys[i+1])
+                elif re.search("h_dm",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.heightGs.append(keys[i+1])
-            elif len(keys) == 3 :
-                values.append(keys[1])
-        values = list(map(float,values))
-        self.heights=list(map(float,self.heights))
-        self.weights=list(map(float,self.weights))
-        self.wSpeed=list(map(float,self.wSpeed))
-        self.wDir=list(map(float,self.wDir))
-        self.theta_x=list(map(float,self.theta_x))
-        self.theta_y=list(map(float,self.theta_y))
-        self.theta_w=list(map(float,self.theta_w))
-        self.h_dm=list(map(float,self.h_dm))
-        self.h_recons=list(map(float,self.h_recons))
-        self.wvlSrc=list(map(float,self.wvlSrc))
-        self.zenithSrc=list(map(float,self.zenithSrc))
-        self.azimuthSrc=list(map(float,self.azimuthSrc))
-        self.heightSrc=list(map(float,self.heightSrc))
-        self.wvlGs=list(map(float,self.wvlGs))
-        self.zenithGs=list(map(float,self.zenithGs))
-        self.azimuthGs=list(map(float,self.azimuthGs))
-        self.heightGs=list(map(float,self.heightGs))
-        fichier.close()
-        
-        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-            self.nbLayers = len(self.weights)
-        else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('Please enter all the parameters of the different layers')
-            print('\n')
-        
-        self.weights=np.array(self.weights)
-        self.heights=np.array(self.heights)
-        self.theta_x=np.array(self.theta_x)/206265
-        self.theta_y=np.array(self.theta_y)/206265
-        self.wDir=np.array(self.wDir)
-        self.weights=self.weights/np.sum(self.weights)
-        self.theta_w = self.theta_w/np.sum(self.theta_w)
-
-        self.r0 = np.array(values[0])
-        self.L0 = values[1]
-        self.wvlAtm = values[2]*1e-9
-        self.D = values[3+4*self.nbLayers]
-        self.zenith_angle = values[4+4*self.nbLayers]
-        self.obsRatio = values[5+4*self.nbLayers]
-        self.resolution = values[6+4*self.nbLayers]
-        self.nActuator = values[7+4*self.nbLayers]
-        self.noiseVariance = values[8+4*self.nbLayers]
-        self.loopGain = values[9+4*self.nbLayers]
-        self.samplingTime = values[10+4*self.nbLayers]*10e-4
-        self.latency = values[11+4*self.nbLayers]*10e-4
-        self.resAO = int(values[12+4*self.nbLayers])
-        self.psInMas = values[13+4*self.nbLayers]
-        self.fovInArcsec = values[14+4*self.nbLayers]
-        self.condmax = values[-1]
-        
-        self.nSrc = len(self.wvlSrc)
-        self.nGs = len(self.wvlGs)
-        
-        self.gs = [] ; self.src = [] ; self.atm = []
-        
-        self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
-        
-        for n in range(self.nSrc):
-            self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],self.heightSrc[n],n+1,"SCIENTIFIC STAR",verbose=True))
-            self.atm.append(atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0))
-            self.atm[n].wvl = self.src[n].wvl
-        
-        for n in range(self.nGs):
-            self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs[n],n+1,"GUIDE STAR",verbose=True))
-        
-        self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
+                        self.h_dm.append(keys[i+1])
+                elif re.search("h_recons",keys[0])!=None:
+                    for i in range(len(keys)-2):
+                        self.h_recons.append(keys[i+1])
+                elif re.search("wvl",keys[0])!=None:
+                    if src == 1 :
+                        for i in range(len(keys)-2):
+                            self.wvlSrc.append(keys[i+1])
+                    elif src==2:
+                        for i in range(len(keys)-2):
+                            self.wvlGs.append(keys[i+1])
+                elif re.search("zenith",keys[0])!=None:
+                    if src == 1 :
+                        for i in range(len(keys)-2):
+                            self.zenithSrc.append(keys[i+1])
+                    else:
+                        for i in range(len(keys)-2):
+                            self.zenithGs.append(keys[i+1])
+                elif re.search("azimuth",keys[0])!=None:
+                    if src == 1 :
+                        for i in range(len(keys)-2):
+                            self.azimuthSrc.append(keys[i+1])
+                    elif src == 2:
+                        for i in range(len(keys)-2):
+                            self.azimuthGs.append(keys[i+1])
+                elif re.search("height",keys[0])!=None:
+                    if src == 1 :
+                        for i in range(len(keys)-2):
+                            self.heightSrc.append(keys[i+1])
+                    else:
+                        for i in range(len(keys)-2):
+                            self.heightGs.append(keys[i+1])
+                elif len(keys) == 3 :
+                    values.append(keys[1])
+            values          = list(map(float,values))
+            self.heights    = list(map(float,self.heights))
+            self.weights    = list(map(float,self.weights))
+            self.wSpeed     = list(map(float,self.wSpeed))
+            self.wDir       = list(map(float,self.wDir))
+            self.theta_x    = list(map(float,self.theta_x))
+            self.theta_y    = list(map(float,self.theta_y))
+            self.theta_w    = list(map(float,self.theta_w))
+            self.h_dm       = list(map(float,self.h_dm))
+            self.h_recons   = list(map(float,self.h_recons))
+            self.wvlSrc     = list(map(float,self.wvlSrc))
+            self.zenithSrc  = list(map(float,self.zenithSrc))
+            self.azimuthSrc = list(map(float,self.azimuthSrc))
+            self.heightSrc  = list(map(float,self.heightSrc))
+            self.wvlGs      = list(map(float,self.wvlGs))
+            self.zenithGs   = list(map(float,self.zenithGs))
+            self.azimuthGs  = list(map(float,self.azimuthGs))
+            self.heightGs   = list(map(float,self.heightGs))
+            fichier.close()
+            
+            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+                self.nbLayers = len(self.weights)
+            else:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('Please enter all the parameters of the different layers')
+                print('\n')
+            
+            self.weights=np.array(self.weights)
+            self.heights=np.array(self.heights)
+            self.theta_x=np.array(self.theta_x)/206265
+            self.theta_y=np.array(self.theta_y)/206265
+            self.wDir=np.array(self.wDir)
+            self.weights=self.weights/np.sum(self.weights)
+            self.theta_w = self.theta_w/np.sum(self.theta_w)
+    
+            self.r0 = np.array(values[0])
+            self.L0 = values[1]
+            self.wvlAtm = values[2]*1e-9
+            self.D = values[3+4*self.nbLayers]
+            self.zenith_angle = values[4+4*self.nbLayers]
+            self.obsRatio = values[5+4*self.nbLayers]
+            self.resolution = values[6+4*self.nbLayers]
+            self.nActuator = values[7+4*self.nbLayers]
+            self.noiseVariance = values[8+4*self.nbLayers]
+            self.loopGain = values[9+4*self.nbLayers]
+            self.samplingTime = values[10+4*self.nbLayers]*10e-4
+            self.latency = values[11+4*self.nbLayers]*10e-4
+            self.resAO = int(values[12+4*self.nbLayers])
+            self.psInMas = values[13+4*self.nbLayers]
+            self.fovInArcsec = values[14+4*self.nbLayers]
+            self.condmax = values[-1]
+            
+            self.nSrc = len(self.wvlSrc)
+            self.nGs = len(self.wvlGs)
+            
+            self.gs = [] ; self.src = [] ; self.atm = []
+            
+            self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
+            
+            for n in range(self.nSrc):
+                self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],self.heightSrc[n],n+1,"SCIENTIFIC STAR",verbose=True))
+                self.atm.append(atmosphere(self.wvlAtm,(self.r0*self.tel.airmass**(-3/5)),self.weights,(self.heights*self.tel.airmass),self.wSpeed,self.wDir,self.L0))
+                self.atm[n].wvl = self.src[n].wvl
+            
+            for n in range(self.nGs):
+                self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs[n],n+1,"GUIDE STAR",verbose=True))
+            
+            #self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,path_pupil)
         
 #%% RECONSTRUCTOR DEFINITION    
     def reconstructionFilter(self,kx,ky):

@@ -6,7 +6,7 @@ wavelenght ; 500 ; [nm]
 weights ; 0.41 ; 0.16 ; 0.1 ; 0.09 ; 0.08 ; 0.05 ; 0.045 ; 0.035 ; 0.02 ; 0.01 ; [N]
 heights ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [m]
 wSpeed ; 5. ; 5. ; 4.5 ; 15.6 ; 25. ; 10.2 ; 8.3 ; 20 ; 10 ; 20 ; [m/s]
-wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 85 ; 180 ; 0 ; 180 ; [angle]
+wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 85 ; 180 ; 0 ; 180 ; [degrees]
 
 
 %%% TELESCOPE %%%
@@ -31,20 +31,20 @@ fovInArcsec ; 3 ; [field of view in arcseconds]
 %%% SCIENTIFIC SOURCE %%%
 wvl ; 1650 ; 1650 ; [nm]
 zenith ; 0 ; 60 ; [arcseconds]
-azimuth ; 0 ; 0 ; [arcseconds]
+azimuth ; 0 ; 0 ; [degrees]
 height ; 0 ; 0 ; [m (0 if infinite)]
 
 %%% GUIDE STAR 1-8 %%%
 wvl ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; [nm]
 zenith ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; [arcseconds]
-azimuth ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; [arcseconds]
+azimuth ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; [degrees]
 height ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; [m (0 if infinite)]
 
 
 %%% ATMOSPHERE RECONSTRUITE %%%
-h_dm ; 0  ; 4000 ; 9000; [altitude des DMs]
+h_dm ; 0  ; 4000 ; 9000; [DMs altitude]
 h_recons ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [Altitude des couches reconstruites]
-theta_x ; 10. ; -10.0 ; 0 ; 0 ; 0; 0; 5; -5;0;  [position d'optimisation x]
-theta_y ; 0.0 ; 0.0 ; 10 ; -10 ; 5; -5; 0; 0;0;  [position d'optimisation y]
-theta_w ; 0.5 ; 0.5 ; 0.5 ; 0.5 ; 0.1; 0.1; 0.1; 0.1;1; [poids]
-condmax ; 1000000 ; [conditionnement max acceptable dans l'inversion pour le calcul de Popt]
+theta_x ; 10. ; -10.0 ; 0 ; 0 ; 0; 0; 5; -5;0;  [optimization direction in x-axis]
+theta_y ; 0.0 ; 0.0 ; 10 ; -10 ; 5; -5; 0; 0;0;  [optimization direction in y-axis]
+theta_w ; 0.5 ; 0.5 ; 0.5 ; 0.5 ; 0.1; 0.1; 0.1; 0.1;1; [weights]
+condmax ; 1000000 ; [#matrix conditionning for Popt calculation]
