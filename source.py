@@ -85,22 +85,28 @@ class source:
         self.height    = np.array(self.height)
         
         if self.verbose:        
-            self.display()    
+            self
         
-    def display(self):
+    def __repr__(self):
         """Display object information: prints information about the source object
         """
        
-        print('___ ',self.type, self.nSource,'___')
-        print('--------------------------------------------------------------------------')        
-        print(' Obj   zen[arcsec] azim[deg]  height[m]  wavelength[micron]\n')
-        if self.nSrc > 1:
-            for kObj in np.arange(0,self.nSrc):
-                    fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
-                            kObj,self.zenith[kObj],self.azimuth[kObj],
+        s = "___ " + self.type + "___\n"
+        s = s + "--------------------------------------------------------------------------\n"  
+        s = s +" Obj zen[arcsec] azim[deg] height[m] wavelength[micron]\n"
+        for kObj in np.arange(0,self.nSrc):
+            s = s + " {:d}  {:.2f}  {:.2f}  {:g}  {:.3f}\n".format(kObj,self.zenith[kObj],self.azimuth[kObj],
                             self.height[kObj],self.wvl[kObj]*1e6)
-        else:
-           fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
-                   self.nSource,self.zenith[0],self.azimuth[0],self.height[0],self.wvl[0]*1e6) 
-               
-        print('--------------------------------------------------------------------------\n')        
+        s = s + "--------------------------------------------------------------------------\n"
+        
+        return s
+#        if self.nSrc > 1:
+#            for kObj in np.arange(0,self.nSrc):
+#                    fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
+#                            kObj,self.zenith[kObj],self.azimuth[kObj],
+#                            self.height[kObj],self.wvl[kObj]*1e6)
+#        else:
+#           fprintf(sys.stdout,' %2d     %5.2f      %6.2f       %g           %5.3f\n',
+#                   self.nSource,self.zenith[0],self.azimuth[0],self.height[0],self.wvl[0]*1e6) 
+#               
+#        print('--------------------------------------------------------------------------\n')        

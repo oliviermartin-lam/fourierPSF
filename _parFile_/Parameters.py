@@ -49,9 +49,9 @@ theta_w = [ 0.5 , 0.5 , 0.5 , 0.5 , 0.1, 0.1, 0.1, 0.1, 1] # weight
 condmax = 1000000 ; #matrix conditionning for Popt calculation
 
 #%% SCIENTIFIC SOURCE #%%
-wvlSrc     =  [1650 , 1650] #[nm]
-zenithSrc  = [0 , 60] #[arcseconds]
-azimuthSrc = [0 , 0] #[arcseconds]
+wvlSrc     =  [1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650] #[nm]
+zenithSrc  = [0 , 5, 10 , 15 , 20 , 25 , 30 , 40 , 50 , 60] #[arcseconds]
+azimuthSrc = [0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0, 0] #[arcseconds]
 
 #%% GUIDE STAR 1-8 #%%
 wvlGs     = [500 , 500 , 500 , 500 , 500 , 500 , 500 , 500 ] #nm

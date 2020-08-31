@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import sys
 import re
 import scipy.special as spc
-import sys
+import time
 
 import FourierUtils
 from telescope import telescope
@@ -322,7 +322,7 @@ class fourierModel:
             
         # Measure matrix
         i    = complex(0,1)
-        d    = self.tel.D/(self.nActuator-1)   #taille sous-pupille   
+        d    = self.tel.D/(self.nActuator-1)   #sub-aperture size
         index  = k <= self.kc
         
         M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
@@ -380,15 +380,15 @@ class fourierModel:
         
         mat1 = np.zeros([nK,nK,nDm,nL],dtype=complex)
         to_inv = np.zeros([nK,nK,nDm,nDm],dtype=complex)
-        for d_o in range(nDir):                 #boucle sur les directions
+        for d_o in range(nDir):                 #loop on optimization directions
             Pdm = np.zeros([nK,nK,1,nDm],dtype=complex)
             Pl = np.zeros([nK,nK,1,nL],dtype=complex)
             fx = self.theta_x[d_o]*kx
             fy = self.theta_y[d_o]*ky
-            for j in range(nDm):                #boucle sur les dm
+            for j in range(nDm):                # loop on DM
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
-            for j in range(nL):                 #boucle sur les couches atm
+            for j in range(nL):                 #loop on atmosphere layers
                 Pl[index,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
                 
             mat1   += np.matmul(Pdm_t,Pl)*self.theta_w[d_o]
@@ -415,7 +415,7 @@ class fourierModel:
         self.Popt = self.optimalProjector(kx,ky)
         self.W = np.matmul(self.Popt,self.Wtomo)
         
-        #Calcul matrice P_beta^DM utiliser pour les PSDs
+        # Computation of the Pbeta^DM matrix
         k = np.hypot(kx,ky)
         index  = k <= self.kc 
         nDm = len(self.h_dm)
@@ -426,7 +426,7 @@ class fourierModel:
             fx = self.src[s].direction[0]*kx
             fy = self.src[s].direction[1]*ky
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
-            for j in range(nDm):                #boucle sur les dm
+            for j in range(nDm): #loop on DMs
                 PbetaDM[index,0,j] = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
@@ -441,7 +441,7 @@ class fourierModel:
         vy          = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)   
         nPts        = kx.shape[0]
         thetaWind   = np.linspace(0, 2*np.pi-2*np.pi/nTh,nTh)
-        costh       = np.cos(thetaWind);
+        costh       = np.cos(thetaWind)
         weights     = self.atm.weights
         Ts          = self.samplingTime
         td          = self.latency        
@@ -520,7 +520,7 @@ class fourierModel:
         if aoFilter == 'square':
             index  = (abs(kxExt)>self.kc) | (abs(kyExt)>self.kc)            
         elif aoFilter == 'circle':
-            index  = np.hypot(kxExt,kyExt) > self.kc;
+            index  = np.hypot(kxExt,kyExt) > self.kc
             
         kExt       = np.hypot(kxExt[index],kyExt[index])
         psd[index] = self.atm.spectrum(kExt)
@@ -663,8 +663,7 @@ class fourierModel:
             else:
                 psd[index] = (1 + abs(F)**2*self.h2[index] 
                 - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
-                
-                
+                                
         else:
             
             deltaT = self.latency+self.samplingTime
@@ -724,7 +723,7 @@ class fourierModel:
         weights = self.atm.weights
         A       = 0*kx
         if sum(sum(self.srcj.direction))!=0:
-            th  = self.srcj.direction[:,iSrc]
+            th  = self.srcj.direction
             for l in np.arange(0,self.atm.nL):
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
@@ -754,13 +753,13 @@ class fourierModel:
         tmp = noise + alias + spatio
         
         psd[np.where(index)] = tmp.ravel()
-        return psd + self.fittingPSD(kx,ky,aoFilter=aoFilter),spatio,noise
+        return np.real(psd + self.fittingPSD(kx,ky,aoFilter=aoFilter))
     
-    def errorBreakDown(self,j,iSrc=0,aoFilter='circle'):
+    def errorBreakDown(self,iSrc=0,aoFilter='circle',verbose=False):
         """
         """
         # Constants
-        wvl    = self.src[j].wvl[iSrc]
+        wvl    = self.src[iSrc].wvl
         rad2nm = 1e9*wvl/2/np.pi        
         kx     = self.kx
         ky     = self.ky
@@ -777,111 +776,130 @@ class fourierModel:
         psdST  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
         psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
         psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        
         # Derives wavefront error
-        wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,kxExt),kxExt)))
-        wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,kx),kx)))
-        wfeN   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,kx),kx))))
-        wfeST  = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,kx),kx))))
-        wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
-        wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
-        wfeTot = np.sqrt(wfeFit**2+wfeAl**2+wfeST**2+wfeN**2)
-        strehl = 100*np.exp(-(wfeTot/rad2nm)**2)
+        self.wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,kxExt),kxExt)))
+        self.wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,kx),kx)))
+        self.wfeN   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,kx),kx))))
+        self.wfeST  = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,kx),kx))))
+        self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
+        self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
+        self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
+        strehl      = 100*np.exp(-(self.wfeTot/rad2nm)**2)
         
-        # Print
-        print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',j+1,' _____')
-        print('------------------------------------------')
-        fprintf(sys.stdout,'.Strehl-ratio at %4.2fmicron:\t%4.2f%%\n',wvl*1e6,strehl)
-        fprintf(sys.stdout,'.Residual wavefront error:\t%4.2fnm\n',wfeTot)
-        fprintf(sys.stdout,'.Fitting error:\t\t\t%4.2fnm\n',wfeFit)
-        fprintf(sys.stdout,'.Aliasing error:\t\t%4.2fnm\n',wfeAl)
-        fprintf(sys.stdout,'.Noise error:\t\t\t%4.2fnm\n',wfeN)
-        fprintf(sys.stdout,'.Aniso+servoLag error:\t\t%4.2fnm\n',wfeST)
-        print('-------------------------------------------')
-        fprintf(sys.stdout,'.Sole anisoplanatism error:\t%4.2fnm\n',wfeAni)
-        fprintf(sys.stdout,'.Sole servoLag error:\t\t%4.2fnm\n',wfeS)
-        print('-------------------------------------------')
+        return strehl
     
-    def getPSF(self,iSrc=0,aoFilter='circle',nyquistSampling=False):
+        # Print
+        if verbose:
+            print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',iSrc+1,' _____')
+            print('------------------------------------------')
+            fprintf(sys.stdout,'.Strehl-ratio at %4.2fmicron:\t%4.2f%%\n',wvl*1e6,self.strehl)
+            fprintf(sys.stdout,'.Residual wavefront error:\t%4.2fnm\n',self.wfeTot)
+            fprintf(sys.stdout,'.Fitting error:\t\t\t%4.2fnm\n',self.wfeFit)
+            fprintf(sys.stdout,'.Aliasing error:\t\t%4.2fnm\n',self.wfeAl)
+            fprintf(sys.stdout,'.Noise error:\t\t\t%4.2fnm\n',self.wfeN)
+            fprintf(sys.stdout,'.Aniso+servoLag error:\t\t%4.2fnm\n',self.wfeST)
+            print('-------------------------------------------')
+            fprintf(sys.stdout,'.Sole anisoplanatism error:\t%4.2fnm\n',self.wfeAni)
+            fprintf(sys.stdout,'.Sole servoLag error:\t\t%4.2fnm\n',self.wfeS)
+            print('-------------------------------------------')
+    
+    def getPSF(self,aoFilter='circle',nyquistSampling=False,verbose=False):
         """
         """
-        # Get constants
-        psInMas = self.psInMas
+        # GET CONSTANTS
+        psInMas     = self.psInMas
         fovInArcsec = self.fovInArcsec
-        dk    = 2*self.kc/self.resAO
-        PSF = []
+        dk          = 2*self.kc/self.resAO
         
+        # TELESCOPE OTF AT NYQUIST-SAMPLING
+        otfTel = FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
+        
+        # INITIALIZING OUTPUTS
+        self.SR  = []
+        self.PSF = []
+        self.PSD = []
+        
+       
         for j in range(self.nSrc):
-            self.srcj = self.src[j]
-            self.atm.wvl = self.srcj.wvl
+            # UPDATE THE ATMOSPHERE WAVELENGTH
+            self.srcj    = self.src[j]
+            wvl          = self.srcj.wvl
+            self.atm.wvl = wvl
             
-            # DEFINE THE RECONSTRUCTOR
-            if self.nGs <2:
-                self.reconstructionFilter(self.kx,self.ky)
-            else:
-                self.finalReconstructor(self.kx,self.ky)
-                
-            self.PbetaDMj = self.PbetaDM[j]
-                
-            # DEFINE THE CONTROLLER
-            self.controller(self.kx,self.ky)
-            
-            wvl   = self.srcj.wvl
+            # CALCULATING THE PSF SAMPLING        
             lonD  = (1e3*180*3600/np.pi*wvl/self.tel.D)
             if nyquistSampling == True:
                 nqSmpl = 1
                 psInMas= lonD/2
             else:
                 nqSmpl= lonD/psInMas/2
+                
             fovInPixel = int((np.ceil(2e3*fovInArcsec/psInMas))/2)
-            fovInPixel   = max([fovInPixel,2*self.resAO])
+            fovInPixel = max([fovInPixel,2*self.resAO])
+            if verbose:
+                fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
+                print('\n-------------------------------------------\n')
+                
+            # DEFINE THE RECONSTRUCTOR
+            if self.nGs <2:
+                self.reconstructionFilter(self.kx,self.ky)
+            else:
+                self.finalReconstructor(self.kx,self.ky)
+                self.PbetaDMj = self.PbetaDM[j]
             
-            # Get the PSD        
-            psd,spatio,noise   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=iSrc,aoFilter=aoFilter)        
+            # DEFINE THE CONTROLLER
+            self.controller(self.kx,self.ky)
+            
+            # GET THE AO RESIDUAL PSD/OTF     
+            psd   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=j,aoFilter=aoFilter)        
+            self.PSD.append(psd)
             psd   = FourierUtils.enlargeSupport(psd,2)
-            
-            self.errorBreakDown(j)
-            fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
-            print('\n-------------------------------------------\n')
             
             otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
             otfAO = FourierUtils.interpolateSupport(otfAO,2*self.tel.resolution)
             otfAO = otfAO/otfAO.max()
-            # Get the telescope OTF
-            otfTel= FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
-            # Get the total OTF corresponding to a nyquist-sampled PSF
-            otfTot= otfAO*otfTel
+            
+            # GET THE WAVE FRONT ERROR BREAKDOWN
+            strehl = self.errorBreakDown(iSrc=j,verbose=verbose)
+            self.SR.append(strehl)
+            
+            # GET THE FINAL PSF
+            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
         
-            if nqSmpl == 1:            
-                # Interpolate the OTF to set the PSF FOV
-                otfTot = FourierUtils.interpolateSupport(otfTot,fovInPixel)
-                psf    = FourierUtils.otf2psf(otfTot)
-            elif nqSmpl >1:
-                # Zero-pad the OTF to set the PSF pixel scale
-                otfTot = FourierUtils.enlargeSupport(otfTot,nqSmpl)
-                # Interpolate the OTF to set the PSF FOV
-                otfTot = FourierUtils.interpolateSupport(otfTot,fovInPixel)
-                psf    = FourierUtils.otf2psf(otfTot)
-            else:
-                # Interpolate the OTF at high resolution to set the PSF FOV
-                otfTot = FourierUtils.interpolateSupport(otfTot,int(np.round(fovInPixel/nqSmpl)))
-                psf    = FourierUtils.otf2psf(otfTot)
-                # Interpolate the PSF to set the PSF pixel scale
-                psf    = FourierUtils.interpolateSupport(psf,fovInPixel)
-            PSF.append(psf)
-        
-        return PSF,self.nSrc
+        return self.PSF,self.PSD
         
     
 def demo():
+    # Instantiate the FourierModel class
+    start = time.time()
     fao = fourierModel("_parFile_/Parameters.py")
-    PSF,nSrc = fao.getPSF()
+    elapsed_time_init = (time.time() - start) 
+    print("Required time for initialization (s) : {:f}".format(elapsed_time_init))
     
-    for j in range(nSrc):
-        plt.figure()
-        title = "PSF SCIENTIFIC SOURCE {}".format(j+1)
-        plt.title(title)
-        plt.imshow(np.log10(PSF[j]))
-        #plt.savefig('psf.png')
+    # Calculate the PSDs/PSFs
+    start = time.time()
+    PSF,PSD = fao.getPSF()
+    elapsed_time_calc = (time.time() - start) 
+    print("Required time for calculation (s) : {:f}".format(elapsed_time_calc))
+    print("Required time for calculation/PSF (s) : {:f}".format(elapsed_time_calc/fao.nSrc))
+    
+    # Display the 2D PSFs/PSDs
+    #for j in range(fao.nSrc):
+    plt.figure()
+    plt.title("PSF")
+    plt.imshow(np.log10(PSF[fao.nSrc-1]))
+    
+    plt.figure()
+    plt.title("PSD")
+    plt.imshow(np.log10(PSD[fao.nSrc-1]))
+    
+    # Plot the Strehl-ratio versus the PSF position
+    plt.figure()
+    plt.plot(fao.zenithSrc,fao.SR)
+    plt.xlabel("Off-axis distance")
+    plt.ylabel("Strehl-ratio (%)")
+    plt.show()
     
     return fao
 

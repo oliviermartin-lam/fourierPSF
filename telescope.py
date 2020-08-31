@@ -11,10 +11,6 @@ import matplotlib.pyplot as plt
 import re
 import FourierUtils
 
-import sys
-
-def fprintf(stream, format_spec, *args):
-    stream.write(format_spec % args)
     
 class telescope:
     """ Telescope class that defines the telescope characteristics.
@@ -83,34 +79,23 @@ class telescope:
             self.verb = False
     
         if self.verbose:
-            self.display()
+            self
+                   
+            
+    def __repr__(self):
+        s = "___TELESCOPE___\n ---------------------------------------- \n"
+        s = s + ". Aperture diameter \t:{:.2f}m \n. Central obstruction \t:{:.2f}% \n. Collecting area \t\t:{:.2f}m^2\n. Pupil resolution \t\t:{:d}X{:d} pixels".format(self.D,self.obsRatio*1e2,self.area,self.resolution,self.resolution)
+        s = s +"\n----------------------------------------\n"
+        return s
         
-    def display(self):
-        """DISPLAY Display object information        
-        display(obj) prints information about the atmosphere+telescope object
+    
+    def displayPupil(self):
+        """DISPLAYPUPIL Display the telescope pupil
         """
                     
-        print('___TELESCOPE___')
-        print('----------------------------------------')
-        if self.verb == True:
-            if re.search(".fits",self.file)!=None:
-                fprintf(sys.stdout,'. File opened:\t%s',self.file)
-                plt.imshow(self.pupil)
-            else:
-                fprintf(sys.stdout,'. File couldnt been open (probably not a .fits file)\n')
-                self.verb = False
-        if self.verb == False:
-            if self.obsRatio==0:
-                fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm',self.D)
-            else:
-                fprintf(sys.stdout,'. Aperture diameter:\t%4.2fm\n. Central obstruction:\t%4.2f%%\n',
-                            self.D,self.obsRatio*100)
-            
-            fprintf(sys.stdout,'. Collecting area:\t%5.2fm^2\n',self.area)
-        
-            if np.isscalar(self.resolution):
-                fprintf(sys.stdout,'. Pupil resolution:\t%dX%d pixels',
-                    self.resolution,self.resolution)
-                          
-        print('\n----------------------------------------\n')
+        plt.figure()
+        plt.imshow(self.pupil)
+        plt.xlabel("Pixels")
+        plt.ylabel("Pixels")
+        plt.title("Telescope pupil")
             

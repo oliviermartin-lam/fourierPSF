@@ -10,6 +10,7 @@ import scipy as sp
 import scipy.special as spc
 import matplotlib.pyplot as plt
 import numpy.fft as fft
+
 #%%  FOURIER TOOLS
 
 def cov2sf(cov):
@@ -61,6 +62,25 @@ def otf2psf(otf):
         out = np.real(fft.fftshift(fft.ifft2(fft.ifftshift(otf*fftPhasor))))
                 
     return out/out.sum()
+
+def otfShannon2psf(otf,nqSmpl,fovInPixel):
+    if nqSmpl == 1:            
+        # Interpolate the OTF to set the PSF FOV
+        otf    = interpolateSupport(otf,fovInPixel)
+        psf    = otf2psf(otf)
+    elif nqSmpl >1:
+        # Zero-pad the OTF to set the PSF pixel scale
+        otf    = enlargeSupport(otf,nqSmpl)
+        # Interpolate the OTF to set the PSF FOV
+        otf    = interpolateSupport(otf,fovInPixel)
+        psf    = otf2psf(otf)
+    else:
+        # Interpolate the OTF at high resolution to set the PSF FOV
+        otf    = interpolateSupport(otf,int(np.round(fovInPixel/nqSmpl)))
+        psf    = otf2psf(otf)
+        # Interpolate the PSF to set the PSF pixel scale
+        psf    = interpolateSupport(psf,fovInPixel)
+    return psf
                         
 def pistonFilter(D,f,fm=0,fn=0):    
     f[np.where(f==0)] = 1e-10 
