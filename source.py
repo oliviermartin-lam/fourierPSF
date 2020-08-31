@@ -74,9 +74,8 @@ class source:
         if test(wvl):
             print('Select the first wavelength value out from the given inputs')
             self.wvl = self.wvl[0]*np.ones(self.nSrc)
-        if test(height):
-            print('Select the first height value out from the given inputs')
-            self.height = self.height[0]*np.ones(self.nSrc)
+        if self.height == math.inf:
+            self.height = self.height*np.ones(self.nSrc)
     
         # Put into array format
         self.wvl       = np.array(self.wvl)

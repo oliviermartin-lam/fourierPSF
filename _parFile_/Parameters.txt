@@ -19,14 +19,15 @@ path_pupil ; "_calib_/vlt_pup_240.fits" ; [fichier.fits]
 
 %%% AO %%%
 nActuator ; 21; [number of actuator in the deformable mirror]
-noiseVariance ; 0.1 ; 
+varNoise ; 0.1 ; 
 loopGain ; 0.5 ; 
 samplingTime ; 1 ; [ms]
 latency ; 2 ; [ms]
 resAO ; 41 ; #odd
 psInMas ; 10 ; 
 fovInArcsec ; 3 ; [field of view in arcseconds]
-
+h_dm ; 0  ; 4000 ; 14000; [DMs altitude]
+pitchs_dm ; 0.22 ; 0.22 ; 0.35 [DM pitch]
 
 %%% SCIENTIFIC SOURCE %%%
 wvl ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; [nm]
@@ -40,10 +41,9 @@ azimuth ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; [degrees]
 height ; 0; [m (0 if infinite)]
 
 
-%%% ATMOSPHERE RECONSTRUITE %%%
-h_dm ; 0  ; 4000 ; 9000; [DMs altitude]
+%%% OPTIMIZATION %%%
 h_recons ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [Altitude des couches reconstruites]
-theta_x ; 10. ; -10.0 ; 0 ; 0 ; 0; 0; 5; -5;0;  [optimization direction in x-axis]
-theta_y ; 0.0 ; 0.0 ; 10 ; -10 ; 5; -5; 0; 0;0;  [optimization direction in y-axis]
-theta_w ; 0.5 ; 0.5 ; 0.5 ; 0.5 ; 0.1; 0.1; 0.1; 0.1;1; [weights]
-condmax ; 1000000 ; [#matrix conditionning for Popt calculation]
+zenithOpt ; 10. ; -10.0 ; 0 ; 0 ; 0; 0; 5; -5;0;  [optimization direction in x-axis]
+azimuthOpt ; 0.0 ; 0.0 ; 10 ; -10 ; 5; -5; 0; 0;0;  [optimization direction in y-axis]
+weightOpt ; 0.5 ; 0.5 ; 0.5 ; 0.5 ; 0.1; 0.1; 0.1; 0.1;1; [weights]
+condmax ; 100 ; [#matrix conditionning for Popt calculation]

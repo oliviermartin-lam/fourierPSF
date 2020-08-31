@@ -31,7 +31,7 @@ class fourierModel:
     @property
     def kc(self):
         """DM cut-of frequency"""
-        return 0.5*(self.nActuator-1)/self.tel.D;
+        return 1/(2*self.pitchs_dm)
     
     @property
     def kcInMas(self):
@@ -56,8 +56,8 @@ class fourierModel:
         
         if self.status:
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
-            kx = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
-            ky = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
+            kx = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
+            ky = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             self.kx,self.ky = np.meshgrid(kx,ky)
         
     def __repr__(self):
@@ -112,19 +112,20 @@ class fourierModel:
             
             # AO parameters
             self.nActuator      = nActuator
-            self.noiseVariance  = noiseVariance
+            self.noiseVariance  = varNoise
             self.loopGain       = loopGain
             self.samplingTime   = samplingTime*1e-3
             self.latency        = latency*1e-3
             self.resAO          = resAO
             self.psInMas        = psInMas
             self.fovInArcsec    = fovInArcsec
+            self.h_dm           = np.array(h_dm)
+            self.pitchs_dm      = np.array(pitchs_dm)
             
             # Optimization
-            self.theta_x        = np.array(theta_x)/206264.8
-            self.theta_y        = np.array(theta_y)/206264.8
-            self.theta_w        = theta_w/np.sum(theta_w)
-            self.h_dm           = h_dm
+            self.zenithOpt      = np.array(zenithOpt)/206264.8
+            self.azimuthOpt     = np.array(azimuthOpt)/206264.8
+            self.weightOpt      = weightOpt/np.sum(weightOpt)
             self.condmax        = condmax
 
         elif file.find(".txt") > 0:
@@ -134,9 +135,10 @@ class fourierModel:
             src = 0
             
             self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
-            self.theta_x = [] ; self.h_dm = [] ; self.h_recons = [] ; self.theta_y = [] ; self.theta_w = []
+            self.zenithOpt = [] ; self.h_dm = [] ; self.h_recons = [] ; self.azimuthOpt = [] ; self.weightOpt = []
             self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
             self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
+            self.picths_dm = []
             
             for line in fichier:
                 keys = line.split(';')
@@ -163,18 +165,21 @@ class fourierModel:
                     for i in range(len(keys)-2):
                         self.wDir.append(keys[i+1])
                         values.append(0)
-                elif re.search("theta_x",keys[0])!=None:
+                elif re.search("zenithOpt",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.theta_x.append(keys[i+1])
-                elif re.search("theta_y",keys[0])!=None:
+                        self.zenithOpt.append(keys[i+1])
+                elif re.search("azimuthOpt",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.theta_y.append(keys[i+1])
-                elif re.search("theta_w",keys[0])!=None:
+                        self.azimuthOpt.append(keys[i+1])
+                elif re.search("weightOpt",keys[0])!=None:
                     for i in range(len(keys)-2):
                         self.theta_w.append(keys[i+1])
                 elif re.search("h_dm",keys[0])!=None:
                     for i in range(len(keys)-2):
                         self.h_dm.append(keys[i+1])
+                elif re.search("pitchs_dm",keys[0])!=None:
+                    for i in range(len(keys)-2):
+                        self.picths_dm.append(keys[i+1])        
                 elif re.search("h_recons",keys[0])!=None:
                     for i in range(len(keys)-2):
                         self.h_recons.append(keys[i+1])
@@ -256,13 +261,15 @@ class fourierModel:
             self.resAO          = int(values[12+4*self.nbLayers])
             self.psInMas        = values[13+4*self.nbLayers]
             self.fovInArcsec    = values[14+4*self.nbLayers]
+            self.h_dm           = np.array(list(map(float,self.h_dm)))
+            self.pitchs_dm      = np.array(list(map(float,self.pitchs_dm)))
             
             # Optimization
-            self.theta_x        = np.array(list(map(float,self.theta_x)))/206264.8
-            self.theta_y        = np.array(list(map(float,self.theta_y)))/206264.8
-            self.theta_w        = np.array(list(map(float,self.theta_w)))
-            self.theta_w        = self.theta_w/np.sum(self.theta_w)
-            self.h_dm           = np.array(list(map(float,self.h_dm)))
+            self.zenithOpt      = np.array(list(map(float,self.zenithOpt)))/206264.8
+            self.azimuthOpt     = np.array(list(map(float,self.azimuthOpt)))/206264.8
+            self.weightOpt      = np.array(list(map(float,self.weightOpt)))
+            self.theta_w        = self.weightOpt/np.sum(self.weightOpt)
+            
             self.h_recons       = np.array(list(map(float,self.h_recons)))
             self.condmax        = values[-1]
             
@@ -295,6 +302,7 @@ class fourierModel:
         self.src = []
         if len(self.wvlSrc) == len(self.zenithSrc) == len(self.azimuthSrc):
             self.nSrc = len(self.wvlSrc)
+            src = source(self.wvlSrc*1e-9,self.zenithSrc,self.azimuthSrc,0,self.nSrc+1,"SCIENTIFIC STAR",verbose=True)
             for n in range(self.nSrc):
                 self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
         else:
@@ -358,7 +366,7 @@ class fourierModel:
         # Measure matrix
         i    = complex(0,1)
         d    = self.tel.D/(self.nActuator-1)   #sub-aperture size
-        index  = k <= self.kc
+        index  = k <= self.kc[0]
         
         M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in np.arange(0,nGs):
@@ -378,7 +386,7 @@ class fourierModel:
         
         Cb = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in range(nGs):
-            Cb[:,:,j,j]     = self.noiseVariance
+            Cb[:,:,j,j]  = self.noiseVariance[j]
         self.Cb = Cb
         
         Cphi = np.zeros ([nK,nK,nL,nL],dtype=complex)
@@ -407,39 +415,42 @@ class fourierModel:
         
     def optimalProjector(self,kx,ky):
         nDm = len(self.h_dm)
-        nDir = (len(self.theta_x))
+        nDir = (len(self.zenithOpt))
         nL = len(self.h_recons)
         nK = len(kx[0,:])
         i    = complex(0,1)
-        index  = np.hypot(kx,ky) <= self.kc
+        index  = np.hypot(kx,ky) <= self.kc[0]
         
-        mat1 = np.zeros([nK,nK,nDm,nL],dtype=complex)
-        to_inv = np.zeros([nK,nK,nDm,nDm],dtype=complex)
+        mat1    = np.zeros([nK,nK,nDm,nL],dtype=complex)
+        to_inv  = np.zeros([nK,nK,nDm,nDm],dtype=complex)
+        theta_x = np.tan(self.zenithOpt*np.pi/180/3600)*np.cos(self.azimuthOpt*np.pi/180)
+        theta_y = np.tan(self.zenithOpt*np.pi/180/3600)*np.sin(self.azimuthOpt*np.pi/180)
+        
         for d_o in range(nDir):                 #loop on optimization directions
             Pdm = np.zeros([nK,nK,1,nDm],dtype=complex)
-            Pl = np.zeros([nK,nK,1,nL],dtype=complex)
-            fx = self.theta_x[d_o]*kx
-            fy = self.theta_y[d_o]*ky
+            Pl  = np.zeros([nK,nK,1,nL],dtype=complex)
+            fx  = theta_x[d_o]*kx
+            fy  = theta_y[d_o]*ky
             for j in range(nDm):                # loop on DM
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
             for j in range(nL):                 #loop on atmosphere layers
                 Pl[index,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
                 
-            mat1   += np.matmul(Pdm_t,Pl)*self.theta_w[d_o]
-            to_inv += np.matmul(Pdm_t,Pdm)*self.theta_w[d_o]
+            mat1   += np.matmul(Pdm_t,Pl)*self.weightOpt[d_o]
+            to_inv += np.matmul(Pdm_t,Pdm)*self.weightOpt[d_o]
             
         mat2 = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
                 if index[x,y] == True :
-                    u,s,vh = np.linalg.svd(to_inv[x,y,:,:])
-                    slim = np.max(s)/self.condmax
-                    rank = np.sum(s > slim)
-                    u = u[:, :rank]
-                    u /= s[:rank]
-                    mat2[x,y,:,:] =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
+                    u,s,vh          = np.linalg.svd(to_inv[x,y,:,:])
+                    slim            = np.max(s)/self.condmax
+                    rank            = np.sum(s > slim)
+                    u               = u[:, :rank]
+                    u               /= s[:rank]
+                    mat2[x,y,:,:]   =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
         
         Popt = np.matmul(mat2,mat1)
         
@@ -452,7 +463,7 @@ class fourierModel:
         
         # Computation of the Pbeta^DM matrix
         k = np.hypot(kx,ky)
-        index  = k <= self.kc 
+        index  = k <= self.kc[0] 
         nDm = len(self.h_dm)
         nK = len(k[0,:])
 
@@ -545,17 +556,18 @@ class fourierModel:
     def fittingPSD(self,kx,ky,aoFilter='circle'):
         """ FITTINGPSD Fitting error power spectrum density """                 
         #Instantiate the function output
+        kc          = self.kc[0]
         resExt      = kx.shape[0]*self.nTimes 
-        kxExt       = 2*self.nTimes*self.kc*fft.fftshift(fft.fftfreq(resExt))    
-        kyExt       = 2*self.nTimes*self.kc*fft.fftshift(fft.fftfreq(resExt))            
+        kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
+        kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
         psd         = np.zeros((resExt,resExt))
             
         # Define the correction area
         if aoFilter == 'square':
-            index  = (abs(kxExt)>self.kc) | (abs(kyExt)>self.kc)            
+            index  = (abs(kxExt)>kc) | (abs(kyExt)>kc)            
         elif aoFilter == 'circle':
-            index  = np.hypot(kxExt,kyExt) > self.kc
+            index  = np.hypot(kxExt,kyExt) > kc
             
         kExt       = np.hypot(kxExt[index],kyExt[index])
         psd[index] = self.atm.spectrum(kExt)
@@ -565,13 +577,13 @@ class fourierModel:
     def aliasingPSD(self,kx,ky,aoFilter='circle'):
         """
         """
-        kc = self.kc
+        kc = self.kc[0]
         psd = np.zeros(kx.shape)
         tmp = psd
         if aoFilter == 'square':
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= self.kc    
+            index  = np.hypot(kx,ky) <= kc    
         if self.nGs < 2:
             i  = complex(0,1)
             k  = np.hypot(kx,ky)
@@ -587,7 +599,7 @@ class fourierModel:
             if self.loopGain == 0:
                 tf = 1
             else:
-                tf = self.h1#np.reshape(self.h1[index],(side,side))
+                tf = self.h1
                     
             weights = self.atm.weights
         
@@ -616,25 +628,23 @@ class fourierModel:
     def noisePSD(self,kx,ky,aoFilter='circle'):
         """NOISEPSD Noise error power spectrum density
         """
-        kc = self.kc;
+        kc = self.kc[0];
         psd = np.zeros(kx.shape,dtype=complex)
-        if self.noiseVariance > 0:
+        if self.noiseVariance[0] > 0:
             if aoFilter == 'square':
                 index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
             elif aoFilter == 'circle':
-                index  = np.hypot(kx,ky) <= self.kc  
+                index  = np.hypot(kx,ky) <= kc  
+            
             if self.nGs < 2:        
-                psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));
-                
+                psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));    
             else:  
-                nK   = len(np.hypot(kx,ky)[0,:])
-                
-                W = self.W
+                nK      = len(np.hypot(kx,ky)[0,:])
+                W       = self.W
                 PbetaDM = self.PbetaDMj
-                Cb = self.Cb
-                
-                PW = np.matmul(PbetaDM,W)
-                PW_t = np.conj(PW.transpose(0,1,3,2))
+                Cb      = self.Cb
+                PW      = np.matmul(PbetaDM,W)
+                PW_t    = np.conj(PW.transpose(0,1,3,2))
                 
                 for x in range(nK):
                     for y in range(nK):
@@ -647,12 +657,12 @@ class fourierModel:
         """ SERVOLAGPSD Servo-lag power spectrum density
         """
             
-        kc = self.kc
+        kc = self.kc[0]
         psd = np.zeros(kx.shape)
         if aoFilter == 'square':
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= self.kc     
+            index  = np.hypot(kx,ky) <= kc     
             
         if self.nGs == 1:        
             F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
@@ -666,17 +676,17 @@ class fourierModel:
             
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
-    def spatioTemporalPSD(self,kx,ky,iSrc=0,aoFilter='circle'): #def spatioTemporalPSD
-        """%% ANISOSERVOLAGPSD Anisoplanatism + Servo-lag power spectrum density
+    def spatioTemporalPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
+        """%% SPATIOTEMPORALPSD Power spectrum density including reconstruction, field variations and temporal effects
         """
            
-        kc = self.kc
+        kc = self.kc[0]
         psd = np.zeros(kx.shape)
         k = np.hypot(kx,ky)
         if aoFilter == 'square':
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= self.kc       
+            index  = np.hypot(kx,ky) <= kc       
         
         if self.nGs < 2:
             heights = self.atm.heights
@@ -747,12 +757,12 @@ class fourierModel:
         """%% ANISOPLANATISMPSD Anisoplanatism power spectrum density
         """
         
-        kc = self.kc
+        kc = self.kc[0]
         psd = np.zeros(kx.shape)
         if aoFilter == 'square':
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= self.kc        
+            index  = np.hypot(kx,ky) <= kc        
         
         heights = self.atm.heights
         weights = self.atm.weights
@@ -773,15 +783,17 @@ class fourierModel:
     def powerSpectrumDensity(self,kx,ky,iSrc=0,aoFilter='circle'):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
-        kc          = self.kc 
+        # COmputation of the extended spatial frequencies domain
+        kc          = self.kc[0] 
         resExt      = kx.shape[0]*self.nTimes 
         kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
         kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
         psd         = np.zeros((resExt,resExt),dtype=complex)
-                      
+        
+# Defining the AO correction area              
         index  = (abs(kxExt) <= kc) & (abs(kyExt) <= kc) 
-        # Sums PSDs
+        # Summing PSDs
         noise   = self.noisePSD(kx,ky,aoFilter=aoFilter)
         alias   = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
         spatio  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
@@ -800,8 +812,8 @@ class fourierModel:
         ky     = self.ky
         # DEFINE THE FREQUENCY VECTORS ACROSS ALL SPATIAL FREQUENCIES
         self.resExt = self.resAO*self.nTimes
-        kxExt       = 2*self.nTimes*self.kc*fft.fftshift(fft.fftfreq(self.resExt))    
-        kyExt       = 2*self.nTimes*self.kc*fft.fftshift(fft.fftfreq(self.resExt))            
+        kxExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))    
+        kyExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)
         
         # Get PSDs
@@ -849,7 +861,7 @@ class fourierModel:
         # GET CONSTANTS
         psInMas     = self.psInMas
         fovInArcsec = self.fovInArcsec
-        dk          = 2*self.kc/self.resAO
+        dk          = 2*self.kc[0]/self.resAO
         
         # TELESCOPE OTF AT NYQUIST-SAMPLING
         otfTel = FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
