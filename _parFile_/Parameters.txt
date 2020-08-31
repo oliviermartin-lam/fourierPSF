@@ -29,16 +29,15 @@ fovInArcsec ; 3 ; [field of view in arcseconds]
 
 
 %%% SCIENTIFIC SOURCE %%%
-wvl ; 1650 ; 1650 ; [nm]
-zenith ; 0 ; 60 ; [arcseconds]
-azimuth ; 0 ; 0 ; [degrees]
-height ; 0 ; 0 ; [m (0 if infinite)]
+wvl ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; [nm]
+zenith ; 0 ; 5 ; 10 ; 15 ; 20 ; 25 ; 30 ; 40 ; 50 ; 60 ; [arcseconds]
+azimuth ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ;[degrees]
 
 %%% GUIDE STAR 1-8 %%%
 wvl ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; [nm]
 zenith ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; [arcseconds]
 azimuth ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; [degrees]
-height ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; [m (0 if infinite)]
+height ; 0; [m (0 if infinite)]
 
 
 %%% ATMOSPHERE RECONSTRUITE %%%

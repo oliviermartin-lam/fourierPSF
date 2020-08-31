@@ -68,10 +68,11 @@ class atmosphere:
                 th0 = ( cst/sum(self.weights*self.heights**(5/3) ) )**(3/5)
             else:                                
                 func= lambda x: self.angularStructureFunction(x) -2
-                th0 = abs(spo.fsolve(func,0))                
+                th0 = abs(spo.fsolve(func,0))    
+                th0 = th0[0]
                               
         
-        return th0[0]*3600*180/np.pi
+        return th0*3600*180/np.pi
     
     @property    
     def meanHeight(self):
@@ -99,6 +100,9 @@ class atmosphere:
         if np.isscalar(L0) | (not np.isscalar(L0) and len(L0)==1):
             self.L0 = L0
             L0      = L0*np.ones(self.nL)
+        elif (not np.isscalar(L0) and len(L0)>1):
+            L0 = np.array(L0[0:self.nL])
+            self.L0 = (np.sum(self.weights * L0**(5/3)))** (3/5)/sum(self.weights)
         if np.isscalar(wSpeed):            
             wSpeed  = wSpeed*np.ones(self.nL)
         if np.isscalar(wDir):            
@@ -120,7 +124,6 @@ class atmosphere:
         """SLAB Create a single turbulence layer atmosphere object            
         singledAtm = slab(atm,k) creates an atmosphere object from
         the old atm object and the k-th turbulent layer"""
-        #r0l= (self.layer[layerIndex].weight*self.r0**(-5/3))**(-3/5)
         r0l = self.layer[layerIndex].r0
         hl = [self.layer[layerIndex].height]
         L0l= self.layer[layerIndex].L0
@@ -138,37 +141,29 @@ class atmosphere:
         
         s = ('___ ATMOSPHERE ___\n')
         if np.isinf(self.L0):
-            s += ' Kolmogorov-Tatarski atmospheric turbulence:\n'
-            s+= '.wavelength=%5.2fmicron,\n.r0 \t\t= %5.2fcm,\n.seeing \t= %5.2farcsec,\n'%(self.wvl*1e6,self.r0*1e2,self.seeing)
+            s += " Kolmogorov-Tatarski atmospheric turbulence :\n"
+            s+= ".wavelength\t= %5.2fmicron,\n.r0 \t\t= %5.2fcm,\n.seeing \t= %5.2farcsec,\n"%(self.wvl*1e6,self.r0*1e2,self.seeing)
         else:
-            s += (' Von Karman atmospheric turbulence\n')
-            s+= '.wavelength  \t=%5.2fmicron,\n.r0 \t\t= %5.2fcm,\n.L0 \t\t= %5.2fm,\n.seeing \t=%5.2farcsec,\n'%(self.wvl*1e6,self.r0*1e2,self.L0,self.seeing)
+            s += (' Von Kármán atmospheric turbulence\n')
+            s+= '.wavelength\t=%5.2fmicron,\n.r0 \t\t= %5.2fcm,\n.L0 \t\t= %5.2fm,\n.seeing \t= %5.2farcsec,\n'%(self.wvl*1e6,self.r0*1e2,self.L0,self.seeing)
             
         if not np.isinf(self.theta0):
-            s+=('.theta0 \t=%5.2farcsec'%self.theta0)
+            s+=('.theta0 \t= %5.2farcsec'%self.theta0)
             
         
-        s+=('\n----------------------------------------------------\n')
-        s+=(' Layer\t Height [m]  Weight  L0[m]  wind([m/s] [deg])\n')
-        if self.nL > 1:
-            for l in np.arange(0,self.nL):
-                fprintf(sys.stdout,' %2d\t %8.2f    %4.2f    %4.2f     (%5.2f %6.2f)\n',
-                l,
+        s+=('\n------------------------------------------------------\n')
+        s+=(' Layer\t Height [m]\t Weight\t L0 [m]\t wind([m/s] [deg])\n')
+        for l in np.arange(0,self.nL):
+            s = s + "%2d\t\t %8.2f\t  %4.2f\t %4.2f\t (%5.2f %6.2f)\n"%(l,\
                 self.layer[l].height,
                 self.layer[l].weight,
                 self.layer[l].L0,
                 self.layer[l].wSpeed,
                 self.layer[l].wDir)
-        else:
-            fprintf(sys.stdout,' %2d\t %8.2f    %4.2f    %4.2f     (%5.2f %6.2f)\n',
-                0,
-                self.layer.height[0],
-                self.layer.weight[0],
-                self.layer.L0,
-                self.layer.wSpeed[0],
-                self.layer.wDir[0])
                 
-        s+=('----------------------------------------------------\n')              
+        
+                
+        s+=('------------------------------------------------------\n')              
         return s
 #%%        
     # ATMOSPHERE STATISTICS
@@ -196,7 +191,6 @@ class atmosphere:
             index    = rho!=0
             u        = 2*np.pi*rho[index]/atm.L0
             cov[index] = c1*c2*L0r0ratio*u**(5/6)*spc.kv(5/6,u)
-            #cov[rho==0]= c1*c2*L0r0ratio*(2**(5/6)*spc.gamma(11/6))*0.6
         else:
             if rho==0:
                 cov = c1*c3*L0r0ratio
@@ -247,7 +241,6 @@ class atmosphere:
                 atmSlab = atm.slab(l)
                 tmp = atmSlab.covariance(atmSlab.layer.height[0]*np.tan(theta))
                 cov = cov + tmp
-                #print(cov)
         else:
             cov = atm.covariance(atm.layer.height[0]*np.tan(theta))
             

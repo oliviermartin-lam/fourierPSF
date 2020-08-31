@@ -5,6 +5,7 @@ Created on Thu Aug 27 15:42:11 2020
 
 @author: omartin
 """
+import numpy as np
 
 #%% TRUE ATMOSPHERE #%%
 r0      = 0.15  # m
@@ -33,7 +34,7 @@ path_pupil  = "_calib_/vlt_pup_240.fits" # [fichier.fits]
 
 #%% AO #%%
 nActuator       = 21
-noiseVariance   =  0.1 #rad^2
+noiseVariance   = 0.1 #rad^2
 loopGain        = 0.5  
 samplingTime    = 1 #ms
 latency         = 2 #ms
@@ -43,18 +44,20 @@ fovInArcsec     = 3 # PSF fov in arcsec
 
 #%% CORRECTION OPTIMIZATION
 h_dm    = [0 , 4000 , 9000] #DM altitude in km
-theta_x = [ 10. , -10.0 , 0 , 0 , 0, 0, 5, -5,0]  # optimization direction in x-axis
-theta_y = [ 0.0 , 0.0 , 10 , -10 , 5, -5, 0, 0,0] # optimization direction in y-axis
-theta_w = [ 0.5 , 0.5 , 0.5 , 0.5 , 0.1, 0.1, 0.1, 0.1, 1] # weight
+theta_x = [0 , 30 , -30 , 0 , 0]  # optimization direction in x-axis
+theta_y = [0 , 0 , 0 , 30 , -30] # optimization direction in y-axis
+theta_w = [1 , 1 , 1 , 1 , 1] # weight
 condmax = 1000000 ; #matrix conditionning for Popt calculation
 
 #%% SCIENTIFIC SOURCE #%%
-wvlSrc     =  [1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650 , 1650] #[nm]
-zenithSrc  = [0 , 5, 10 , 15 , 20 , 25 , 30 , 40 , 50 , 60] #[arcseconds]
-azimuthSrc = [0 , 0 , 0 , 0 , 0 , 0 , 0 , 0 , 0, 0] #[arcseconds]
+nSrc       = 11
+wvlSrc     = 1650*np.ones(nSrc) #[nm]
+zenithSrc  = np.linspace(0,60,num=nSrc) #[arcseconds]
+azimuthSrc = np.zeros(nSrc) #[arcseconds]
 
 #%% GUIDE STAR 1-8 #%%
-wvlGs     = [500 , 500 , 500 , 500 , 500 , 500 , 500 , 500 ] #nm
-zenithGs  = [60 , 60 , 60 , 60 , 60 , 60 , 60 , 60] #arcseconds
-azimuthGs = [0 , 45 , 90 , 135 , 180 , 225 , 270 , 315] #degrees
+nGs       = 1
+wvlGs     = 500 * np.ones(nGs) #nm
+zenithGs  = 30 * np.ones(nGs) #arcseconds
+azimuthGs = np.linspace(0,360 - 360/nGs,num=nGs) #degrees
 heightGs  = 0 #[m (0 if infinite)]

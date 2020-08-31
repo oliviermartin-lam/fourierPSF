@@ -50,16 +50,23 @@ class fourierModel:
     def __init__(self,file):
     
         # PARSING INPUTS
+        self.status = 0
         self.file         = file  
-        self.parameters(self.file)        
+        self.status = self.parameters(self.file)        
         
-        # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
-        kx = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
-        ky = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
-        self.kx,self.ky = np.meshgrid(kx,ky)
+        if self.status:
+            # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
+            kx = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
+            ky = 2*self.kc*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
+            self.kx,self.ky = np.meshgrid(kx,ky)
         
     def __repr__(self):
-        s = "Spatial Frequency \n kc=%.2fm^-1"%self.kc
+        s = "Fourier Model class"
+        if self.status == 1:
+            s = s + "instantiated"
+        else:
+            s = s + "not instantiated"
+            
         return s
     
     def parameters(self,file):
@@ -83,6 +90,14 @@ class fourierModel:
             self.heights        = np.array(heights)
             self.wSpeed         = np.array(wSpeed)
             self.wDir           = np.array(wDir)
+            
+            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+                self.nbLayers = len(self.weights)
+            else:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('Please enter all the parameters of the different layers')
+                print('\n')
+                return 0
             
             # Scientific sources
             self.wvlSrc         = np.array(wvlSrc)
@@ -196,6 +211,14 @@ class fourierModel:
                     
             values          = list(map(float,values))
             
+            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+                self.nbLayers = len(self.weights)
+            else:
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('Please enter all the parameters of the different layers')
+                print('\n')
+                return 0
+            
             # Telescope
             self.D              = values[3+4*self.nbLayers]
             self.zenith_angle   = values[4+4*self.nbLayers]
@@ -213,16 +236,16 @@ class fourierModel:
             self.wDir           = np.array(list(map(float,self.wDir)))
             
             # Scientific sources
-            self.wvlSrc        = np.array(list(map(float,self.wvlSrc)))
+            self.wvlSrc         = np.array(list(map(float,self.wvlSrc)))
             self.zenithSrc      = np.array( list(map(float,self.zenithSrc)))
             self.azimuthSrc     = np.array(list(map(float,self.azimuthSrc)))
             #self.heightSrc  = np.array(list(map(float,self.heightSrc)))
             
             # Guide stars
-            self.wvlGs         = np.array(list(map(float,self.wvlGs)))
+            self.wvlGs          = np.array(list(map(float,self.wvlGs)))
             self.zenithGs       = np.array(list(map(float,self.zenithGs)))
             self.azimuthGs      = np.array(list(map(float,self.azimuthGs)))
-            self.heightGs       = list(map(float,self.heightGs))
+            self.heightGs       = np.array(list(map(float,self.heightGs)))
             
             # AO parameters
             self.nActuator      = values[7+4*self.nbLayers]
@@ -248,17 +271,17 @@ class fourierModel:
         
         #%% instantiating sub-classes
         
-        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-            self.nbLayers = len(self.weights)
-        else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('Please enter all the parameters of the different layers')
-            print('\n')
-                                
         # Telescope
         self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,self.path_pupil)
         
         # Strechning factor (LGS case)
+        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
+            self.nbLayers = len(self.weights)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of atmospheric layers is not consistent in the parameters file\n')
+            return 0
+            
         self.heights  = self.heights*self.tel.airmass
         self.heightGs = self.heightGs*self.tel.airmass # LGS height
         if self.heightGs > 0:
@@ -270,16 +293,28 @@ class fourierModel:
 
         # Scientific Sources
         self.src = []
-        self.nSrc = len(self.wvlSrc)
-        for n in range(self.nSrc):
-            self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
+        if len(self.wvlSrc) == len(self.zenithSrc) == len(self.azimuthSrc):
+            self.nSrc = len(self.wvlSrc)
+            for n in range(self.nSrc):
+                self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of scientific sources is not consistent in the parameters file\n')
+            return 0
             
         # Guide stars
         self.gs = []
-        self.nGs = len(self.wvlGs)
-        for n in range(self.nGs):
-            self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
+        if len(self.wvlGs) == len(self.zenithGs) == len(self.azimuthGs):
+            self.nGs = len(self.wvlGs)
+            for n in range(self.nGs):
+                self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of guide stars is not consistent in the parameters file\n')
+            return 0
         
+        return 1
+    
 #%% RECONSTRUCTOR DEFINITION    
     def reconstructionFilter(self,kx,ky):
         """
@@ -287,7 +322,7 @@ class fourierModel:
         # Get spectrums    
         Wn   = self.noiseVariance/(2*self.kc)**2
         k    = np.hypot(kx,ky)           
-        Wphi = self.atmj.spectrum(k);
+        Wphi = self.atm.spectrum(k);
             
         # reconstructor derivation
         i    = complex(0,1)
@@ -543,8 +578,8 @@ class fourierModel:
             d  = self.tel.D/(self.nActuator-1)
             T  = self.samplingTime
             td = self.latency        
-            vx = self.atmj.wSpeed*np.cos(self.atmj.wDir*np.pi/180)
-            vy = self.atmj.wSpeed*np.sin(self.atmj.wDir*np.pi/180)
+            vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
+            vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
             Rx = self.Rx
             Ry = self.Ry
         
@@ -554,7 +589,7 @@ class fourierModel:
             else:
                 tf = self.h1#np.reshape(self.h1[index],(side,side))
                     
-            weights = self.atmj.weights
+            weights = self.atm.weights
         
             w = 2*i*np.pi*d;
             for mi in np.arange(-self.nTimes,self.nTimes+1):
@@ -563,11 +598,11 @@ class fourierModel:
                         km = kx - mi/d
                         kn = ky - ni/d
                         PR = FourierUtils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
-                        W_mn = (abs(km**2 + kn**2) + 1/self.atmj.L0**2)**(-11/6)     
+                        W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
                         Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
                         avr = 0
                         
-                        for l in np.arange(0,self.atmj.nL):
+                        for l in np.arange(0,self.atm.nL):
                             avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
                             *np.exp(2*i*np.pi*km*vx[l]*td)*np.exp(2*i*np.pi*kn*vy[l]*td)*tf)
                                                           
@@ -621,7 +656,7 @@ class fourierModel:
             
         if self.nGs == 1:        
             F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-            Wphi = self.atmj.spectrum(np.hypot(kx,ky))
+            Wphi = self.atm.spectrum(np.hypot(kx,ky))
         
             if (self.loopGain == 0):
                 psd[index] = abs(1-F)**2*Wphi[index]
@@ -644,19 +679,19 @@ class fourierModel:
             index  = np.hypot(kx,ky) <= self.kc       
         
         if self.nGs < 2:
-            heights = self.atmj.heights
-            weights = self.atmj.weights
+            heights = self.atm.heights
+            weights = self.atm.weights
             A       = 0*kx
-            if sum(sum(self.srcj.direction))!=0:
-                th  = self.srcj.direction[:,iSrc]
-                for l in np.arange(0,self.atmj.nL):                
+            if sum(sum(abs(self.srcj.direction - self.gs[0].direction)))!=0:
+                th  = self.srcj.direction - self.gs[0].direction
+                for l in np.arange(0,self.atm.nL):                
                     red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                     A   = A + weights[l]*np.exp(complex(0,1)*red)            
             else:
                 A = np.ones(kx.shape)
         
             F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-            Wphi = self.atmj.spectrum(np.hypot(kx,ky))   
+            Wphi = self.atm.spectrum(np.hypot(kx,ky))   
             
             if (self.loopGain == 0):  
                 psd[index] = abs(1-F)**2*A*Wphi[index]
@@ -755,7 +790,7 @@ class fourierModel:
         psd[np.where(index)] = tmp.ravel()
         return np.real(psd + self.fittingPSD(kx,ky,aoFilter=aoFilter))
     
-    def errorBreakDown(self,iSrc=0,aoFilter='circle',verbose=False):
+    def errorBreakDown(self,iSrc=0,aoFilter='circle',verbose=True):
         """
         """
         # Constants
@@ -787,13 +822,13 @@ class fourierModel:
         self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
         strehl      = 100*np.exp(-(self.wfeTot/rad2nm)**2)
         
-        return strehl
+        
     
         # Print
-        if verbose:
+        if verbose == True:
             print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',iSrc+1,' _____')
             print('------------------------------------------')
-            fprintf(sys.stdout,'.Strehl-ratio at %4.2fmicron:\t%4.2f%%\n',wvl*1e6,self.strehl)
+            fprintf(sys.stdout,'.Strehl-ratio at %4.2fmicron:\t%4.2f%%\n',wvl*1e6,strehl)
             fprintf(sys.stdout,'.Residual wavefront error:\t%4.2fnm\n',self.wfeTot)
             fprintf(sys.stdout,'.Fitting error:\t\t\t%4.2fnm\n',self.wfeFit)
             fprintf(sys.stdout,'.Aliasing error:\t\t%4.2fnm\n',self.wfeAl)
@@ -803,10 +838,16 @@ class fourierModel:
             fprintf(sys.stdout,'.Sole anisoplanatism error:\t%4.2fnm\n',self.wfeAni)
             fprintf(sys.stdout,'.Sole servoLag error:\t\t%4.2fnm\n',self.wfeS)
             print('-------------------------------------------')
+            
+        return strehl
     
     def getPSF(self,aoFilter='circle',nyquistSampling=False,verbose=False):
         """
         """
+        if not self.status:
+            print("The fourier Model class must be instantiated first\n")
+            return 0,0
+        
         # GET CONSTANTS
         psInMas     = self.psInMas
         fovInArcsec = self.fovInArcsec
@@ -877,29 +918,30 @@ def demo():
     elapsed_time_init = (time.time() - start) 
     print("Required time for initialization (s) : {:f}".format(elapsed_time_init))
     
-    # Calculate the PSDs/PSFs
-    start = time.time()
-    PSF,PSD = fao.getPSF()
-    elapsed_time_calc = (time.time() - start) 
-    print("Required time for calculation (s) : {:f}".format(elapsed_time_calc))
-    print("Required time for calculation/PSF (s) : {:f}".format(elapsed_time_calc/fao.nSrc))
-    
-    # Display the 2D PSFs/PSDs
-    #for j in range(fao.nSrc):
-    plt.figure()
-    plt.title("PSF")
-    plt.imshow(np.log10(PSF[fao.nSrc-1]))
-    
-    plt.figure()
-    plt.title("PSD")
-    plt.imshow(np.log10(PSD[fao.nSrc-1]))
-    
-    # Plot the Strehl-ratio versus the PSF position
-    plt.figure()
-    plt.plot(fao.zenithSrc,fao.SR)
-    plt.xlabel("Off-axis distance")
-    plt.ylabel("Strehl-ratio (%)")
-    plt.show()
+    if fao.status:
+        # Calculate the PSDs/PSFs
+        start = time.time()
+        PSF,PSD = fao.getPSF()
+        elapsed_time_calc = (time.time() - start) 
+        print("Required time for calculation (s) : {:f}".format(elapsed_time_calc))
+        print("Required time for calculation/PSF (s) : {:f}".format(elapsed_time_calc/fao.nSrc))
+        
+        # Display the 2D PSFs/PSDs
+        #for j in range(fao.nSrc):
+        plt.figure()
+        plt.title("PSF on-axis")
+        plt.imshow(np.log10(PSF[0]))
+        
+        plt.figure()
+        plt.title("PSF off-axis")
+        plt.imshow(np.log10(PSF[fao.nSrc-1]))
+        
+        # Plot the Strehl-ratio versus the PSF position
+        plt.figure()
+        plt.plot(fao.zenithSrc,fao.SR)
+        plt.xlabel("Off-axis distance")
+        plt.ylabel("Strehl-ratio (%)")
+        plt.show()
     
     return fao
 
