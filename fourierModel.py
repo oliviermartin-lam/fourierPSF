@@ -757,8 +757,8 @@ class fourierModel:
         heights = self.atm.heights
         weights = self.atm.weights
         A       = 0*kx
-        if sum(sum(self.srcj.direction))!=0:
-            th  = self.srcj.direction
+        if sum(sum(abs(self.srcj.direction - self.gs[0].direction)))!=0:
+            th  = self.srcj.direction - self.gs[0].direction
             for l in np.arange(0,self.atm.nL):
                 red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
@@ -782,10 +782,10 @@ class fourierModel:
                       
         index  = (abs(kxExt) <= kc) & (abs(kyExt) <= kc) 
         # Sums PSDs
-        noise = self.noisePSD(kx,ky,aoFilter=aoFilter)
-        alias = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
-        spatio = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
-        tmp = noise + alias + spatio
+        noise   = self.noisePSD(kx,ky,aoFilter=aoFilter)
+        alias   = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
+        spatio  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        tmp     = noise + alias + spatio
         
         psd[np.where(index)] = tmp.ravel()
         return np.real(psd + self.fittingPSD(kx,ky,aoFilter=aoFilter))
@@ -822,8 +822,6 @@ class fourierModel:
         self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
         strehl      = 100*np.exp(-(self.wfeTot/rad2nm)**2)
         
-        
-    
         # Print
         if verbose == True:
             print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',iSrc+1,' _____')
