@@ -930,7 +930,8 @@ class fourierModel:
             self.SR.append(strehl)
             
             # GET THE FINAL PSF
-            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
+            psf = FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel)
+            self.PSF.append(psf/sum(psf))
         
         self.elapsed_time_calc = (time.time() - start) 
         print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
