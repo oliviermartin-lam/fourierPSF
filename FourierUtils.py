@@ -6,9 +6,7 @@ Created on Wed Jun 17 01:17:43 2020
 """
 # Libraries
 import numpy as np
-import scipy as sp
 import scipy.special as spc
-import matplotlib.pyplot as plt
 import numpy.fft as fft
 
 #%%  FOURIER TOOLS

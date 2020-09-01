@@ -936,6 +936,10 @@ class fourierModel:
         print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
         print("Required time for calculating a PSF (s)\t : {:f}".format(self.elapsed_time_calc/self.nSrc))
         
+        self.PSF = np.array(self.PSF)
+        self.PSD = np.array(self.PSD)
+        self.SR  = np.array(self.SR)
+        
         return self.PSF,self.PSD
         
     def displayResults(self):
@@ -949,18 +953,17 @@ class fourierModel:
         plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
         plt.legend(bbox_to_anchor=(1.05, 1))
     
-        # PSFs
-        if self.PSF:
-            plt.figure()
-            plt.title("PSF on-axis")
-            plt.imshow(np.log10(self.PSF[0]))
         
+        # PSFs
+        if self.PSF.any():
+            n = self.PSF.shape[-1]
             plt.figure()
-            plt.title("PSF off-axis")
-            plt.imshow(np.log10(self.PSF[self.nSrc-1]))
+            plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[0],self.zenithSrc[-1]))
+            P = np.concatenate((fao.PSF[0,:,:],fao.PSF[-1,:,:]),axis=1)
+            plt.imshow(np.log10(P))
         
         # STREHL-RATIO
-        if self.SR:
+        if self.SR.any():
             plt.figure()
             plt.plot(self.zenithSrc,self.SR,'bo',markersize=10)
             plt.xlabel("Off-axis distance")

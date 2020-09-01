@@ -8,10 +8,6 @@ Created on Sat Aug 18 14:21:41 2018
 
 import numpy as np
 import math
-import sys
-
-def fprintf(stream, format_spec, *args):
-    stream.write(format_spec % args)
     
 class source:
     """

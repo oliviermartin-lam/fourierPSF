@@ -10,12 +10,8 @@ import numpy as np
 import scipy.special as spc
 import scipy.optimize as spo
 import math
-import sys
-import FourierUtils
 
 #%%
-def fprintf(stream, format_spec, *args):
-    stream.write(format_spec % args)
     
 class Attribute(object):
     pass
