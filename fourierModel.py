@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Created on Tue Sep  1 16:31:39 2020
+
+@author: omartin
+"""
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
 Created on Thu Aug 16 15:00:44 2018
 
 @author: omartin
@@ -97,6 +105,13 @@ class fourierModel:
             self.wSpeed         = np.array(wSpeed)
             self.wDir           = np.array(wDir)
             
+            self.r0_mod         = r0_mod
+            self.L0_mod         = L0_mod
+            self.weights_mod    = np.array(weights_mod)
+            self.heights_mod    = np.array(heights_mod)
+            self.wSpeed_mod     = np.array(wSpeed_mod)
+            self.wDir_mod       = np.array(wDir_mod)
+            
             if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
                 self.nbLayers = len(self.weights)
             else:
@@ -141,7 +156,7 @@ class fourierModel:
             src = 0
             
             self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
-            self.zenithOpt = [] ; self.h_dm = [] ; self.h_recons = [] ; self.azimuthOpt = [] ; self.weightOpt = []
+            self.zenithOpt = [] ; self.h_dm = [] ; self.azimuthOpt = [] ; self.weightOpt = []
             self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
             self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
             self.pitchs_dm = [] ; self.pitchs_wfs = []
@@ -188,10 +203,7 @@ class fourierModel:
                         self.pitchs_dm.append(keys[i+1])     
                 elif re.search("pitchs_wfs",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.pitchs_wfs.append(keys[i+1])             
-                elif re.search("h_recons",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.h_recons.append(keys[i+1])
+                        self.pitchs_wfs.append(keys[i+1])              
                 elif re.search("wvl",keys[0])!=None:
                     if src == 1 :
                         for i in range(len(keys)-2):
@@ -277,9 +289,7 @@ class fourierModel:
             self.zenithOpt      = np.array(list(map(float,self.zenithOpt)))
             self.azimuthOpt     = np.array(list(map(float,self.azimuthOpt)))
             self.weightOpt      = np.array(list(map(float,self.weightOpt)))
-            self.weightOpt      = self.weightOpt/np.sum(self.weightOpt)
-            
-            self.h_recons       = np.array(list(map(float,self.h_recons)))
+            self.weightOpt      = self.weightOpt/np.sum(self.weightOpt)            
             self.condmax        = values[-1]
             
             fichier.close()
@@ -297,16 +307,29 @@ class fourierModel:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The number of atmospheric layers is not consistent in the parameters file\n')
             return 0
-            
+               
         self.heights  = self.heights*self.tel.airmass
         self.heightGs = self.heightGs*self.tel.airmass # LGS height
         if self.heightGs > 0:
             self.heights = self.heights/(1 - self.heights/self.heightGs)
-
-        # True atmosphere
+            
+        # Model atmosphere    
+        if self.heights_mod.any():
+            self.heights_mod  = self.heights_mod*self.tel.airmass
+            if self.heightGs > 0:
+                self.heights_mod = self.heights_mod/(1 - self.heights_mod/self.heightGs)
+        else:
+            self.heights_mod= self.heights
+            self.r0_mod     = self.r0
+            self.L0_mod     = self.L0
+            self.wSpeed_mod = self.wSpeed
+            self.wDir_mod   = self.wDir_mod
+            
+        
+        # Atmosphere
         self.atm = atmosphere(self.wvlAtm,self.r0*self.tel.airmass**(-3/5),self.weights,self.heights,self.wSpeed,self.wDir,self.L0)
-        self.h_recons = self.heights
-
+        self.atm_mod = atmosphere(self.wvlAtm,self.r0_mod*self.tel.airmass**(-3/5),self.weights_mod,self.heights_mod,self.wSpeed_mod,self.wDir_mod,self.L0_mod)
+        
         # Scientific Sources
         self.src = []
         if len(self.wvlSrc) == len(self.zenithSrc) == len(self.azimuthSrc):
@@ -368,10 +391,11 @@ class fourierModel:
         self.Ry[N,N] = 0
 
     def tomographicReconstructor(self,kx,ky):
-        k    = np.hypot(kx,ky)     
-        nK   = len(k[0,:])
-        nL = len(self.h_recons)
-        nGs = self.nGs
+        k       = np.hypot(kx,ky)     
+        nK      = len(k[0,:])
+        nL      = len(self.heights)
+        nL_mod  = len(self.heights_mod)
+        nGs     = self.nGs
         Alpha = np.zeros([2,nGs])
         for j in range(nGs):
             Alpha[0,j] = self.gs[j].direction[0]
@@ -379,37 +403,53 @@ class fourierModel:
             
         # WFS operator matrix
         i    = complex(0,1)
-        d    = self.pitchs_wfs   #sub-aperture size
-        
+        d    = self.pitchs_wfs   #sub-aperture size      
         M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in np.arange(0,nGs):
             M[:,:,j,j] = 2*i*np.pi*k*np.sinc(d[j]*kx)*np.sinc(d[j]*ky)
         self.M = M
         # Projection matrix
-        P    = np.zeros([nK,nK,nGs,nL],dtype=complex)
+        P    = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)
         
-        for n in range(nL):
+        for n in range(nL_mod):
             for j in range(nGs):
                 fx = kx*Alpha[0,j]
                 fy = ky*Alpha[1,j]
-                P[:,:,j,n] = np.exp(i*2*np.pi*self.h_recons[n]*(fx + fy))
+                P[:,:,j,n] = np.exp(i*2*np.pi*self.heights_mod[n]*(fx + fy))
                 
         MP = np.matmul(M,P)
         MP_t = np.conj(MP.transpose(0,1,3,2))
         
+        # Noise covariance matrix
         Cb = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in range(nGs):
             Cb[:,:,j,j]  = self.noiseVariance[j]
         self.Cb = Cb
         
-        Cphi = np.zeros ([nK,nK,nL,nL],dtype=complex)
+        # Atmospheric PSD with the true atmosphere
+        Cphi = np.zeros([nK,nK,nL,nL],dtype=complex)
         cte = (24*spc.gamma(6/5)/5)**(5/6)*(spc.gamma(11/6)**2./(2.*np.pi**(11/3)))
-        for j in range(nL):
-            Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
-            *FourierUtils.pistonFilter(self.tel.D,k)
+        if nL == 1:
+            Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,k)
+        else:
+            for j in range(nL):
+                Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,k)
         self.Cphi = Cphi
-                
-        to_inv  = np.matmul(np.matmul(MP,Cphi),MP_t) + self.Cb 
+        
+        # Atmospheric PSD with the modelled atmosphere
+        Cphi = np.zeros([nK,nK,nL_mod,nL_mod],dtype=complex)
+        if nL_mod == 1:
+            Cphi[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(k**2 + 1/self.atm_mod.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,k)
+        else:
+            for j in range(nL_mod):
+                Cphi[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(k**2 + 1/self.atm_mod.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,k)
+        self.Cphi_mod = Cphi
+        
+        to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
         inv     = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
@@ -422,14 +462,14 @@ class fourierModel:
                 u           /= s[:rank]
                 inv[x,y,:,:]=  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
                 
-        Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
+        Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)
         
         return Wtomo
         
     def optimalProjector(self,kx,ky):
         nDm     = len(self.h_dm)
         nDir    = (len(self.zenithOpt))
-        nL      = len(self.h_recons)
+        nL      = len(self.heights_mod)
         nK      = len(kx[0,:])
         i       = complex(0,1)
         
@@ -448,7 +488,7 @@ class fourierModel:
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
             for l in range(nL):                 #loop on atmosphere layers
-                Pl[:,:,0,l] = np.exp(i*2*np.pi*self.h_recons[l]*(fx + fy))
+                Pl[:,:,0,l] = np.exp(i*2*np.pi*self.heights_mod[l]*(fx + fy))
                 
             mat1   += np.matmul(Pdm_t,Pl)*self.weightOpt[d_o]
             to_inv += np.matmul(Pdm_t,Pdm)*self.weightOpt[d_o]
@@ -750,8 +790,8 @@ class fourierModel:
                 PbetaL[index,0,j] = np.exp(i*2*np.pi*( Hs[j]*(fx[index]+fy[index]) -  deltaT*self.wSpeed[j]*(wDir_x[j]*kx[index] + wDir_y[j]*ky[index]) ))
             
             PbetaDM = self.PbetaDMj
-            W = self.W
-            Cphi = self.Cphi
+            W       = self.W
+            Cphi    = self.Cphi # PSD obtained from the true atmosphere
             
             proj = np.zeros([nK,nK,1,nH],dtype=complex)
             for x in range(nK):
@@ -803,7 +843,7 @@ class fourierModel:
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
         psd         = np.zeros((resExt,resExt),dtype=complex)
         
-# Defining the AO correction area              
+        # Defining the AO correction area              
         index  = (abs(kxExt) <= kc) & (abs(kyExt) <= kc) 
         # Summing PSDs
         noise   = self.noisePSD(kx,ky,aoFilter=aoFilter)
@@ -891,6 +931,7 @@ class fourierModel:
             self.srcj    = self.src[j]
             wvl          = self.srcj.wvl
             self.atm.wvl = wvl
+            self.atm_mod.wvl = wvl
             
             # CALCULATING THE PSF SAMPLING        
             lonD  = (1e3*180*3600/np.pi*wvl/self.tel.D)
@@ -930,8 +971,7 @@ class fourierModel:
             self.SR.append(strehl)
             
             # GET THE FINAL PSF
-            psf = FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel)
-            self.PSF.append(psf/sum(psf))
+            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
         
         self.elapsed_time_calc = (time.time() - start) 
         print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
@@ -973,7 +1013,7 @@ class fourierModel:
         
 def demo():
     # Instantiate the FourierModel class
-    fao = fourierModel("_parFile_/Parameters.py")
+    fao = fourierModel("Parameters.py")
         
     if fao.status:
         PSF,PSD = fao.getPSF()
