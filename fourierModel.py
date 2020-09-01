@@ -49,6 +49,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file):
     
+        start = time.time()
         # PARSING INPUTS
         self.status = 0
         self.file         = file  
@@ -59,14 +60,19 @@ class fourierModel:
             kx = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
             ky = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             self.kx,self.ky = np.meshgrid(kx,ky)
-        
+            
+        self.elapsed_time_init = (time.time() - start) 
+        print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
+          
     def __repr__(self):
-        s = "Fourier Model class"
+        s = "Fourier Model class "
         if self.status == 1:
             s = s + "instantiated"
         else:
             s = s + "not instantiated"
-            
+        
+        self.displayResults()
+        
         return s
     
     def parameters(self,file):
@@ -111,7 +117,6 @@ class fourierModel:
             self.heightGs       = heightGs
             
             # AO parameters
-            self.nActuator      = nActuator
             self.noiseVariance  = varNoise
             self.loopGain       = loopGain
             self.samplingTime   = samplingTime*1e-3
@@ -121,10 +126,11 @@ class fourierModel:
             self.fovInArcsec    = fovInArcsec
             self.h_dm           = np.array(h_dm)
             self.pitchs_dm      = np.array(pitchs_dm)
+            self.pitchs_wfs     = np.array(pitchs_wfs)
             
             # Optimization
-            self.zenithOpt      = np.array(zenithOpt)/206264.8
-            self.azimuthOpt     = np.array(azimuthOpt)/206264.8
+            self.zenithOpt      = np.array(zenithOpt)
+            self.azimuthOpt     = np.array(azimuthOpt)
             self.weightOpt      = weightOpt/np.sum(weightOpt)
             self.condmax        = condmax
 
@@ -138,7 +144,7 @@ class fourierModel:
             self.zenithOpt = [] ; self.h_dm = [] ; self.h_recons = [] ; self.azimuthOpt = [] ; self.weightOpt = []
             self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
             self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
-            self.picths_dm = []
+            self.pitchs_dm = [] ; self.pitchs_wfs = []
             
             for line in fichier:
                 keys = line.split(';')
@@ -173,13 +179,16 @@ class fourierModel:
                         self.azimuthOpt.append(keys[i+1])
                 elif re.search("weightOpt",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.theta_w.append(keys[i+1])
+                        self.weightOpt.append(keys[i+1])
                 elif re.search("h_dm",keys[0])!=None:
                     for i in range(len(keys)-2):
                         self.h_dm.append(keys[i+1])
                 elif re.search("pitchs_dm",keys[0])!=None:
                     for i in range(len(keys)-2):
-                        self.picths_dm.append(keys[i+1])        
+                        self.pitchs_dm.append(keys[i+1])     
+                elif re.search("pitchs_wfs",keys[0])!=None:
+                    for i in range(len(keys)-2):
+                        self.pitchs_wfs.append(keys[i+1])             
                 elif re.search("h_recons",keys[0])!=None:
                     for i in range(len(keys)-2):
                         self.h_recons.append(keys[i+1])
@@ -244,7 +253,6 @@ class fourierModel:
             self.wvlSrc         = np.array(list(map(float,self.wvlSrc)))
             self.zenithSrc      = np.array( list(map(float,self.zenithSrc)))
             self.azimuthSrc     = np.array(list(map(float,self.azimuthSrc)))
-            #self.heightSrc  = np.array(list(map(float,self.heightSrc)))
             
             # Guide stars
             self.wvlGs          = np.array(list(map(float,self.wvlGs)))
@@ -253,22 +261,23 @@ class fourierModel:
             self.heightGs       = np.array(list(map(float,self.heightGs)))
             
             # AO parameters
-            self.nActuator      = values[7+4*self.nbLayers]
-            self.noiseVariance  = values[8+4*self.nbLayers]
-            self.loopGain       = values[9+4*self.nbLayers]
-            self.samplingTime   = values[10+4*self.nbLayers]*10e-4
-            self.latency        = values[11+4*self.nbLayers]*10e-4
-            self.resAO          = int(values[12+4*self.nbLayers])
-            self.psInMas        = values[13+4*self.nbLayers]
-            self.fovInArcsec    = values[14+4*self.nbLayers]
+            self.noiseVariance  = np.array([values[7+4*self.nbLayers]])
+            self.loopGain       = values[8+4*self.nbLayers]
+            self.samplingTime   = values[9+4*self.nbLayers]*1e-3
+            self.latency        = values[10+4*self.nbLayers]*1e-3
+            self.resAO          = int(values[11+4*self.nbLayers])
+            self.psInMas        = values[12+4*self.nbLayers]
+            self.fovInArcsec    = values[13+4*self.nbLayers]
             self.h_dm           = np.array(list(map(float,self.h_dm)))
             self.pitchs_dm      = np.array(list(map(float,self.pitchs_dm)))
+            self.pitchs_wfs     = np.array(list(map(float,self.pitchs_wfs)))
             
+            #pdb.set_trace()
             # Optimization
-            self.zenithOpt      = np.array(list(map(float,self.zenithOpt)))/206264.8
-            self.azimuthOpt     = np.array(list(map(float,self.azimuthOpt)))/206264.8
+            self.zenithOpt      = np.array(list(map(float,self.zenithOpt)))
+            self.azimuthOpt     = np.array(list(map(float,self.azimuthOpt)))
             self.weightOpt      = np.array(list(map(float,self.weightOpt)))
-            self.theta_w        = self.weightOpt/np.sum(self.weightOpt)
+            self.weightOpt      = self.weightOpt/np.sum(self.weightOpt)
             
             self.h_recons       = np.array(list(map(float,self.h_recons)))
             self.condmax        = values[-1]
@@ -316,6 +325,11 @@ class fourierModel:
             self.nGs = len(self.wvlGs)
             for n in range(self.nGs):
                 self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
+            if len(self.pitchs_wfs) == 1:
+                self.pitchs_wfs = self.pitchs_wfs * np.ones(self.nGs)
+            #pdb.set_trace()    
+            if len(self.noiseVariance) == 1:
+                self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
         else:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The number of guide stars is not consistent in the parameters file\n')
@@ -334,7 +348,7 @@ class fourierModel:
             
         # reconstructor derivation
         i    = complex(0,1)
-        d    = self.tel.D/(self.nActuator-1)     
+        d    = self.pitchs_dm[0]   
         Sx   = 2*i*np.pi*kx*d
         Sy   = 2*i*np.pi*ky*d                        
         Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky))        
@@ -363,14 +377,13 @@ class fourierModel:
             Alpha[0,j] = self.gs[j].direction[0]
             Alpha[1,j] = self.gs[j].direction[1]
             
-        # Measure matrix
+        # WFS operator matrix
         i    = complex(0,1)
-        d    = self.tel.D/(self.nActuator-1)   #sub-aperture size
-        index  = k <= self.kc[0]
+        d    = self.pitchs_wfs   #sub-aperture size
         
         M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in np.arange(0,nGs):
-            M[index,j,j] = 2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])
+            M[:,:,j,j] = 2*i*np.pi*k*np.sinc(d[j]*kx)*np.sinc(d[j]*ky)
         self.M = M
         # Projection matrix
         P    = np.zeros([nK,nK,nGs,nL],dtype=complex)
@@ -379,7 +392,7 @@ class fourierModel:
             for j in range(nGs):
                 fx = kx*Alpha[0,j]
                 fy = ky*Alpha[1,j]
-                P[index,j,n] = np.exp(i*2*np.pi*self.h_recons[n]*(fx[index]+fy[index]))
+                P[:,:,j,n] = np.exp(i*2*np.pi*self.h_recons[n]*(fx + fy))
                 
         MP = np.matmul(M,P)
         MP_t = np.conj(MP.transpose(0,1,3,2))
@@ -396,35 +409,34 @@ class fourierModel:
             *FourierUtils.pistonFilter(self.tel.D,k)
         self.Cphi = Cphi
                 
-        to_inv = np.matmul(np.matmul(MP,Cphi),MP_t) + self.Cb 
-        inv = np.zeros(to_inv.shape,dtype=complex)
+        to_inv  = np.matmul(np.matmul(MP,Cphi),MP_t) + self.Cb 
+        inv     = np.zeros(to_inv.shape,dtype=complex)
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                if index[x,y] == True : 
-                    u,s,vh = np.linalg.svd(to_inv[x,y,:,:])
-                    slim = np.max(s)/self.condmax
-                    rank = np.sum(s > slim)
-                    u = u[:, :rank]
-                    u /= s[:rank]
-                    inv[x,y,:,:] =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
+                #if index[x,y] == True : 
+                u,s,vh      = np.linalg.svd(to_inv[x,y,:,:])
+                slim        = np.max(s)/self.condmax
+                rank        = np.sum(s > slim)
+                u           = u[:, :rank]
+                u           /= s[:rank]
+                inv[x,y,:,:]=  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
                 
         Wtomo = np.matmul(np.matmul(Cphi,MP_t),inv)
         
         return Wtomo
         
     def optimalProjector(self,kx,ky):
-        nDm = len(self.h_dm)
-        nDir = (len(self.zenithOpt))
-        nL = len(self.h_recons)
-        nK = len(kx[0,:])
-        i    = complex(0,1)
-        index  = np.hypot(kx,ky) <= self.kc[0]
+        nDm     = len(self.h_dm)
+        nDir    = (len(self.zenithOpt))
+        nL      = len(self.h_recons)
+        nK      = len(kx[0,:])
+        i       = complex(0,1)
         
         mat1    = np.zeros([nK,nK,nDm,nL],dtype=complex)
         to_inv  = np.zeros([nK,nK,nDm,nDm],dtype=complex)
-        theta_x = np.tan(self.zenithOpt*np.pi/180/3600)*np.cos(self.azimuthOpt*np.pi/180)
-        theta_y = np.tan(self.zenithOpt*np.pi/180/3600)*np.sin(self.azimuthOpt*np.pi/180)
+        theta_x = self.zenithOpt/206264.8 * np.cos(self.azimuthOpt*np.pi/180)
+        theta_y = self.zenithOpt/206264.8 * np.sin(self.azimuthOpt*np.pi/180)
         
         for d_o in range(nDir):                 #loop on optimization directions
             Pdm = np.zeros([nK,nK,1,nDm],dtype=complex)
@@ -432,10 +444,11 @@ class fourierModel:
             fx  = theta_x[d_o]*kx
             fy  = theta_y[d_o]*ky
             for j in range(nDm):                # loop on DM
+                index   = np.hypot(kx,ky) <= self.kc[j]
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
-            for j in range(nL):                 #loop on atmosphere layers
-                Pl[index,0,j] = np.exp(i*2*np.pi*self.h_recons[j]*(fx[index]+fy[index]))
+            for l in range(nL):                 #loop on atmosphere layers
+                Pl[:,:,0,l] = np.exp(i*2*np.pi*self.h_recons[l]*(fx + fy))
                 
             mat1   += np.matmul(Pdm_t,Pl)*self.weightOpt[d_o]
             to_inv += np.matmul(Pdm_t,Pdm)*self.weightOpt[d_o]
@@ -444,28 +457,27 @@ class fourierModel:
         
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                if index[x,y] == True :
-                    u,s,vh          = np.linalg.svd(to_inv[x,y,:,:])
-                    slim            = np.max(s)/self.condmax
-                    rank            = np.sum(s > slim)
-                    u               = u[:, :rank]
-                    u               /= s[:rank]
-                    mat2[x,y,:,:]   =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
+                #if index[x,y] == True :
+                u,s,vh          = np.linalg.svd(to_inv[x,y,:,:])
+                slim            = np.max(s)/self.condmax
+                rank            = np.sum(s > slim)
+                u               = u[:, :rank]
+                u               /= s[:rank]
+                mat2[x,y,:,:]   =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
         
         Popt = np.matmul(mat2,mat1)
         
         return Popt
     
     def finalReconstructor(self,kx,ky):
-        self.Wtomo = self.tomographicReconstructor(kx,ky)
-        self.Popt = self.optimalProjector(kx,ky)
-        self.W = np.matmul(self.Popt,self.Wtomo)
+        self.Wtomo  = self.tomographicReconstructor(kx,ky)
+        self.Popt   = self.optimalProjector(kx,ky)
+        self.W      = np.matmul(self.Popt,self.Wtomo)
         
         # Computation of the Pbeta^DM matrix
-        k = np.hypot(kx,ky)
-        index  = k <= self.kc[0] 
-        nDm = len(self.h_dm)
-        nK = len(k[0,:])
+        k       = np.hypot(kx,ky)
+        nDm     = len(self.h_dm)
+        nK      = len(k[0,:])
 
         self.PbetaDM = []
         for s in range(self.nSrc):
@@ -473,6 +485,7 @@ class fourierModel:
             fy = self.src[s].direction[1]*ky
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm): #loop on DMs
+                index   = np.hypot(kx,ky) <= self.kc[j]
                 PbetaDM[index,0,j] = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
@@ -529,9 +542,9 @@ class fourierModel:
                 atfInt  = hInt*z**(-delay)*rtfInt
                 
                 # ao transfer function
-                MAG = abs(atfInt)                
-                MAG[fi == 0] = 1
-                PH  = np.angle(atfInt)                
+                MAG               = abs(atfInt)                
+                MAG[fi == 0]      = 1
+                PH                = np.angle(atfInt)                
                 h2buf[:,:,iTheta] = abs(MAG*np.exp(i*PH))**2
                 h1buf[:,:,iTheta] = MAG*np.exp(i*PH)
                 # noise transfer function
@@ -587,14 +600,13 @@ class fourierModel:
         if self.nGs < 2:
             i  = complex(0,1)
             k  = np.hypot(kx,ky)
-            d  = self.tel.D/(self.nActuator-1)
+            d  = self.pitchs_dm[0]
             T  = self.samplingTime
             td = self.latency        
             vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
             vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
             Rx = self.Rx
             Ry = self.Ry
-        
         
             if self.loopGain == 0:
                 tf = 1
@@ -716,7 +728,7 @@ class fourierModel:
             nH = self.nbLayers
             Hs = self.heights
             i    = complex(0,1)
-            d    = self.tel.D/(self.nActuator-1)
+            d    = self.pitchs_dm[0]
             wDir_x = np.cos(self.wDir*np.pi/180)
             wDir_y = np.sin(self.wDir*np.pi/180)
             
@@ -854,6 +866,8 @@ class fourierModel:
     def getPSF(self,aoFilter='circle',nyquistSampling=False,verbose=False):
         """
         """
+        start = time.time()
+        
         if not self.status:
             print("The fourier Model class must be instantiated first\n")
             return 0,0
@@ -918,41 +932,49 @@ class fourierModel:
             # GET THE FINAL PSF
             self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
         
+        self.elapsed_time_calc = (time.time() - start) 
+        print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
+        print("Required time for calculating a PSF (s)\t : {:f}".format(self.elapsed_time_calc/self.nSrc))
+        
         return self.PSF,self.PSD
         
+    def displayResults(self):
+        """
+        """
+        # GEOMETRY
+        deg2rad = np.pi/180
+        plt.figure()
+        plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation')
+        plt.polar(self.azimuthGs*deg2rad,self.zenithGs,'bs',markersize=7,label='GS position')
+        plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
+        plt.legend(bbox_to_anchor=(1.05, 1))
     
+        # PSFs
+        if self.PSF:
+            plt.figure()
+            plt.title("PSF on-axis")
+            plt.imshow(np.log10(self.PSF[0]))
+        
+            plt.figure()
+            plt.title("PSF off-axis")
+            plt.imshow(np.log10(self.PSF[self.nSrc-1]))
+        
+        # STREHL-RATIO
+        if self.SR:
+            plt.figure()
+            plt.plot(self.zenithSrc,self.SR,'bo',markersize=10)
+            plt.xlabel("Off-axis distance")
+            plt.ylabel("Strehl-ratio (%)")
+            plt.show()
+        
 def demo():
     # Instantiate the FourierModel class
-    start = time.time()
     fao = fourierModel("_parFile_/Parameters.py")
-    elapsed_time_init = (time.time() - start) 
-    print("Required time for initialization (s) : {:f}".format(elapsed_time_init))
-    
+        
     if fao.status:
-        # Calculate the PSDs/PSFs
-        start = time.time()
         PSF,PSD = fao.getPSF()
-        elapsed_time_calc = (time.time() - start) 
-        print("Required time for calculation (s) : {:f}".format(elapsed_time_calc))
-        print("Required time for calculation/PSF (s) : {:f}".format(elapsed_time_calc/fao.nSrc))
-        
-        # Display the 2D PSFs/PSDs
-        #for j in range(fao.nSrc):
-        plt.figure()
-        plt.title("PSF on-axis")
-        plt.imshow(np.log10(PSF[0]))
-        
-        plt.figure()
-        plt.title("PSF off-axis")
-        plt.imshow(np.log10(PSF[fao.nSrc-1]))
-        
-        # Plot the Strehl-ratio versus the PSF position
-        plt.figure()
-        plt.plot(fao.zenithSrc,fao.SR)
-        plt.xlabel("Off-axis distance")
-        plt.ylabel("Strehl-ratio (%)")
-        plt.show()
-    
+        fao.displayResults()
+
     return fao
 
 fao = demo()

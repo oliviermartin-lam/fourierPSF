@@ -1,49 +1,49 @@
 %%% TRUE ATMOSPHERE %%%
-r0 ; 0.15 ; [m]
+r0 ; 0.1258 ; [m]
 L0 ; 25 ; [m]
 wavelenght ; 500 ; [nm]
 %% Layer 1-10 %%
-weights ; 0.41 ; 0.16 ; 0.1 ; 0.09 ; 0.08 ; 0.05 ; 0.045 ; 0.035 ; 0.02 ; 0.01 ; [N]
-heights ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [m]
-wSpeed ; 5. ; 5. ; 4.5 ; 15.6 ; 25. ; 10.2 ; 8.3 ; 20 ; 10 ; 20 ; [m/s]
-wDir ; 0 ; 180 ; 120 ; -60 ; 5 ; -85 ; 85 ; 180 ; 0 ; 180 ; [degrees]
+weights ; 0.59 ; 0.02 ; 0.04 ; 0.06 ; 0.01 ; 0.05 ; 0.09 ; 0.04 ; 0.05 ; 0.05 ; [N]
+heights ; 30 ; 140 ; 281 ; 562 ; 1125 ; 2250 ; 4500 ; 7750 ; 11000 ; 14000; [m]
+wSpeed ; 6.6 ; 5.9 ; 5.1 ; 4.5 ; 5.1 ; 8.3 ; 16.3 ; 30.2 ; 34.3 ; 17.5; [m/s]
+wDir ; 0. ; 0. ; 0. ; 0. ; 90. ; -90. ; -90. ; 90. ; 0. ; 0. ; [degrees]
 
 
 %%% TELESCOPE %%%
 D ; 8 ; [m]
-zenit_angle ; 0 ; [degrees]
+zenit_angle ; 30 ; [degrees]
 obsRatio ; 0.14 ; [rate %]
 resolution ; 240 ; [number of pixels]
 path_pupil ; "_calib_/vlt_pup_240.fits" ; [fichier.fits]
 
 
 %%% AO %%%
-nActuator ; 21; [number of actuator in the deformable mirror]
-varNoise ; 0.1 ; 
+noiseVariance ; 0.1 ; 
 loopGain ; 0.5 ; 
 samplingTime ; 1 ; [ms]
-latency ; 2 ; [ms]
+latency ; 1 ; [ms]
 resAO ; 41 ; #odd
-psInMas ; 10 ; 
-fovInArcsec ; 3 ; [field of view in arcseconds]
+psInMas ; 7.4 ; 
+fovInArcsec ; 2.96 ; [field of view in arcseconds]
 h_dm ; 0  ; 4000 ; 14000; [DMs altitude]
-pitchs_dm ; 0.22 ; 0.22 ; 0.35 [DM pitch]
+pitchs_dm ; 0.22 ; 0.22 ; 0.35 ; [DM pitch]
+pitchs_wfs ; 0.2 ;  [WFS pitch]
 
 %%% SCIENTIFIC SOURCE %%%
-wvl ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; 1650 ; [nm]
-zenith ; 0 ; 5 ; 10 ; 15 ; 20 ; 25 ; 30 ; 40 ; 50 ; 60 ; [arcseconds]
-azimuth ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ; 0 ;[degrees]
+wvl ; 640 ; 640 ; 640 ; 640 ; 640 ; 640 ; 640 ; 640 ; 640 ; [nm]
+zenith ; 0 ;  8.8 ; 17.5 ;  8.8 ; 12.44507935 ; 19.58800653 ; 17.5 ; 19.58800653 ; 24.74873734; [arcseconds]
+azimuth ; 0. ; 90 ; 90 ;  0 ; 45 ; 63.30413677 ;  0 ; 26.69586323 ; 45;[degrees]
 
 %%% GUIDE STAR 1-8 %%%
-wvl ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; 500 ; [nm]
-zenith ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; [arcseconds]
+wvl ; 589 ; 589 ; 589 ; 589 ; 589 ; 589 ; 589 ; 589 ; [nm]
+zenith ; 17.5 ; 17.5 ; 17.5 ; 17.5 ; 17.5 ; 17.5 ; 17.5 ; 17.5 ; [arcseconds]
 azimuth ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; [degrees]
-height ; 0; [m (0 if infinite)]
+height ; 90000; [m (0 if infinite)]
 
 
 %%% OPTIMIZATION %%%
-h_recons ; 0 ; 200 ; 600 ; 1200 ; 3000 ; 4700 ; 7300 ; 8500 ; 9700 ; 11000 ; [Altitude des couches reconstruites]
-zenithOpt ; 10. ; -10.0 ; 0 ; 0 ; 0; 0; 5; -5;0;  [optimization direction in x-axis]
-azimuthOpt ; 0.0 ; 0.0 ; 10 ; -10 ; 5; -5; 0; 0;0;  [optimization direction in y-axis]
-weightOpt ; 0.5 ; 0.5 ; 0.5 ; 0.5 ; 0.1; 0.1; 0.1; 0.1;1; [weights]
-condmax ; 100 ; [#matrix conditionning for Popt calculation]
+h_recons ; 30 ; 140 ; 281 ; 562 ; 1125 ; 2250 ; 4500 ; 7750 ; 11000 ; 14000; [Altitude des couches reconstruites]
+zenithOpt ; 0 ; 15 ; 15 ; 15 ; 15 ; 15 ; 15 ; 15 ; 15 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; 60 ; [optimization direction in x-axis]
+azimuthOpt ; 0 ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315 ; 0 ; 45 ; 90 ; 135 ; 180 ; 225 ; 270 ; 315;  [optimization direction in y-axis]
+weightOpt ; 4 ; 4 ; 4 ; 4 ; 4 ; 4 ; 4 ; 4 ; 4 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1 ; 1; [weights]
+condmax ; 9000 ; [#matrix conditionning for Popt calculation]
