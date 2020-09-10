@@ -68,7 +68,7 @@ pitchs_wfs  = D/nLenslet * np.ones(nGs)
 loopGain    = 0.5                                                               # Loop gain
 samplingTime= 1                                                                 # RTC sampling time in ms
 latency     = 1                                                                 # AO loop latency in ms
-resAO       = 41                                                                # AO correction area in pixels
+resAO       = 2*nLenslet+1                                                      # AO correction area in pixels in the PSD domain
 
 # NOISE VARIANCE
 nph         = 75*np.ones(nGs)                                                   # number of photon/frame/sub-aperture 

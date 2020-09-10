@@ -17,7 +17,6 @@ import numpy as np
 import numpy.fft as fft
 import matplotlib.pyplot as plt
 import sys
-import re
 import scipy.special as spc
 import time
 
@@ -26,10 +25,6 @@ from telescope import telescope
 from atmosphere import atmosphere
 from source import source
 
-import pdb
-
-def fprintf(stream, format_spec, *args):
-    stream.write(format_spec % args)
     
 class fourierModel:
     """ Fourier class gathering the PSD calculation for PSF reconstruction. 
@@ -85,216 +80,63 @@ class fourierModel:
     
     def parameters(self,file):
                     
-        if file.find(".py") > 0:
-            # run the .py file
-            runfile(file)
+        # run the .py file
+        runfile(file)
             
-            # Telescope
-            self.D              = D
-            self.zenith_angle   = zenith_angle
-            self.obsRatio       = obsRatio
-            self.resolution     = resolution
-            self.path_pupil     = path_pupil
+        # Telescope
+        self.D              = D
+        self.zenith_angle   = zenith_angle
+        self.obsRatio       = obsRatio
+        self.resolution     = resolution
+        self.path_pupil     = path_pupil
             
-            # Atmosphere
-            self.wvlAtm         = wvlAtm*1e-9
-            self.r0             = r0
-            self.L0             = L0
-            self.weights        = np.array(weights)
-            self.heights        = np.array(heights)
-            self.wSpeed         = np.array(wSpeed)
-            self.wDir           = np.array(wDir)
-            
-            self.r0_mod         = r0_mod
-            self.L0_mod         = L0_mod
-            self.weights_mod    = np.array(weights_mod)
-            self.heights_mod    = np.array(heights_mod)
-            self.wSpeed_mod     = np.array(wSpeed_mod)
-            self.wDir_mod       = np.array(wDir_mod)
-            
-            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-                self.nbLayers = len(self.weights)
-            else:
-                print('%%%%%%%% ERROR %%%%%%%%')
-                print('Please enter all the parameters of the different layers')
-                print('\n')
-                return 0
-            
-            # Scientific sources
-            self.wvlSrc         = np.array(wvlSrc)
-            self.zenithSrc      = np.array(zenithSrc)
-            self.azimuthSrc     = np.array(azimuthSrc)
-            
-            # Guide stars
-            self.wvlGs          = np.array(wvlGs)
-            self.zenithGs       = np.array(zenithGs)
-            self.azimuthGs      = np.array(azimuthGs)
-            self.heightGs       = heightGs
-            
-            # AO parameters
-            self.noiseVariance  = varNoise
-            self.loopGain       = loopGain
-            self.samplingTime   = samplingTime*1e-3
-            self.latency        = latency*1e-3
-            self.resAO          = resAO
-            self.psInMas        = psInMas
-            self.fovInArcsec    = fovInArcsec
-            self.h_dm           = np.array(h_dm)
-            self.pitchs_dm      = np.array(pitchs_dm)
-            self.pitchs_wfs     = np.array(pitchs_wfs)
-            
-            # Optimization
-            self.zenithOpt      = np.array(zenithOpt)
-            self.azimuthOpt     = np.array(azimuthOpt)
-            self.weightOpt      = weightOpt/np.sum(weightOpt)
-            self.condmax        = condmax
-
-        elif file.find(".txt") > 0:
-            # READ THE .TXT FILE
-            fichier = open(file,"r")
-            values = []
-            src = 0
-            
-            self.weights = [] ; self.heights = [] ; self.wSpeed = [] ; self.wDir = []
-            self.zenithOpt = [] ; self.h_dm = [] ; self.azimuthOpt = [] ; self.weightOpt = []
-            self.wvlSrc = [] ; self.zenithSrc = [] ; self.azimuthSrc = [] ; self.heightSrc = []
-            self.wvlGs = [] ; self.zenithGs = [] ; self.azimuthGs = [] ; self.heightGs = []
-            self.pitchs_dm = [] ; self.pitchs_wfs = []
-            
-            for line in fichier:
-                keys = line.split(';')
-                if re.search("path_pupil",keys[0])!=None:
-                    keys = line.split('"')
-                    self.path_pupil = keys[1]
-                elif re.search("SCIENTIFIC SOURCE",keys[0])!=None:
-                    src = 1
-                elif re.search("GUIDE STAR",keys[0])!=None:
-                    src = 2
-                elif re.search("weights",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.weights.append(keys[i+1])
-                        values.append(0)
-                elif re.search("heights",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.heights.append(keys[i+1])
-                        values.append(0)
-                elif re.search("wSpeed",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.wSpeed.append(keys[i+1])
-                        values.append(0)
-                elif re.search("wDir",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.wDir.append(keys[i+1])
-                        values.append(0)
-                elif re.search("zenithOpt",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.zenithOpt.append(keys[i+1])
-                elif re.search("azimuthOpt",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.azimuthOpt.append(keys[i+1])
-                elif re.search("weightOpt",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.weightOpt.append(keys[i+1])
-                elif re.search("h_dm",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.h_dm.append(keys[i+1])
-                elif re.search("pitchs_dm",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.pitchs_dm.append(keys[i+1])     
-                elif re.search("pitchs_wfs",keys[0])!=None:
-                    for i in range(len(keys)-2):
-                        self.pitchs_wfs.append(keys[i+1])              
-                elif re.search("wvl",keys[0])!=None:
-                    if src == 1 :
-                        for i in range(len(keys)-2):
-                            self.wvlSrc.append(keys[i+1])
-                    elif src==2:
-                        for i in range(len(keys)-2):
-                            self.wvlGs.append(keys[i+1])
-                elif re.search("zenith",keys[0])!=None:
-                    if src == 1 :
-                        for i in range(len(keys)-2):
-                            self.zenithSrc.append(keys[i+1])
-                    else:
-                        for i in range(len(keys)-2):
-                            self.zenithGs.append(keys[i+1])
-                elif re.search("azimuth",keys[0])!=None:
-                    if src == 1 :
-                        for i in range(len(keys)-2):
-                            self.azimuthSrc.append(keys[i+1])
-                    elif src == 2:
-                        for i in range(len(keys)-2):
-                            self.azimuthGs.append(keys[i+1])
-                elif re.search("height",keys[0])!=None:
-                    if src == 1 :
-                        for i in range(len(keys)-2):
-                            self.heightSrc.append(keys[i+1])
-                    else:
-                        for i in range(len(keys)-2):
-                            self.heightGs.append(keys[i+1])
-                elif len(keys) == 3 :
-                    values.append(keys[1])
-                    
-            values          = list(map(float,values))
-            
-            if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-                self.nbLayers = len(self.weights)
-            else:
-                print('%%%%%%%% ERROR %%%%%%%%')
-                print('Please enter all the parameters of the different layers')
-                print('\n')
-                return 0
-            
-            # Telescope
-            self.D              = values[3+4*self.nbLayers]
-            self.zenith_angle   = values[4+4*self.nbLayers]
-            self.obsRatio       = values[5+4*self.nbLayers]
-            self.resolution     = values[6+4*self.nbLayers]
-            
-            #Atmosphere
-            self.r0             = np.array(values[0])
-            self.L0             = values[1]
-            self.wvlAtm         = values[2]*1e-9
-            self.heights        = np.array(list(map(float,self.heights)))
-            self.weights        = np.array(list(map(float,self.weights)))
-            self.weights        = self.weights/np.sum(self.weights)
-            self.wSpeed         = np.array(list(map(float,self.wSpeed)))
-            self.wDir           = np.array(list(map(float,self.wDir)))
-            
-            # Scientific sources
-            self.wvlSrc         = np.array(list(map(float,self.wvlSrc)))
-            self.zenithSrc      = np.array( list(map(float,self.zenithSrc)))
-            self.azimuthSrc     = np.array(list(map(float,self.azimuthSrc)))
-            
-            # Guide stars
-            self.wvlGs          = np.array(list(map(float,self.wvlGs)))
-            self.zenithGs       = np.array(list(map(float,self.zenithGs)))
-            self.azimuthGs      = np.array(list(map(float,self.azimuthGs)))
-            self.heightGs       = np.array(list(map(float,self.heightGs)))
-            
-            # AO parameters
-            self.noiseVariance  = np.array([values[7+4*self.nbLayers]])
-            self.loopGain       = values[8+4*self.nbLayers]
-            self.samplingTime   = values[9+4*self.nbLayers]*1e-3
-            self.latency        = values[10+4*self.nbLayers]*1e-3
-            self.resAO          = int(values[11+4*self.nbLayers])
-            self.psInMas        = values[12+4*self.nbLayers]
-            self.fovInArcsec    = values[13+4*self.nbLayers]
-            self.h_dm           = np.array(list(map(float,self.h_dm)))
-            self.pitchs_dm      = np.array(list(map(float,self.pitchs_dm)))
-            self.pitchs_wfs     = np.array(list(map(float,self.pitchs_wfs)))
-            
-            #pdb.set_trace()
-            # Optimization
-            self.zenithOpt      = np.array(list(map(float,self.zenithOpt)))
-            self.azimuthOpt     = np.array(list(map(float,self.azimuthOpt)))
-            self.weightOpt      = np.array(list(map(float,self.weightOpt)))
-            self.weightOpt      = self.weightOpt/np.sum(self.weightOpt)            
-            self.condmax        = values[-1]
-            
-            fichier.close()
-            
+        # True Atmosphere
+        self.wvlAtm         = wvlAtm*1e-9
+        self.r0             = r0
+        self.L0             = L0
+        self.weights        = np.array(weights)
+        self.heights        = np.array(heights)
+        self.wSpeed         = np.array(wSpeed)
+        self.wDir           = np.array(wDir)
         
+        # Model atmosphere
+        self.r0_mod         = r0_mod
+        self.L0_mod         = L0_mod
+        self.weights_mod    = np.array(weights_mod)
+        self.heights_mod    = np.array(heights_mod)
+        self.wSpeed_mod     = np.array(wSpeed_mod)
+        self.wDir_mod       = np.array(wDir_mod)
+            
+        # Scientific sources
+        self.wvlSrc         = np.array(wvlSrc)
+        self.zenithSrc      = np.array(zenithSrc)
+        self.azimuthSrc     = np.array(azimuthSrc)
+            
+        # Guide stars
+        self.wvlGs          = np.array(wvlGs)
+        self.zenithGs       = np.array(zenithGs)
+        self.azimuthGs      = np.array(azimuthGs)
+        self.heightGs       = heightGs
+            
+        # AO parameters
+        self.noiseVariance  = varNoise
+        self.loopGain       = loopGain
+        self.samplingTime   = samplingTime*1e-3
+        self.latency        = latency*1e-3
+        self.resAO          = resAO
+        self.psInMas        = psInMas
+        self.fovInArcsec    = fovInArcsec
+        self.h_dm           = np.array(h_dm)
+        self.pitchs_dm      = np.array(pitchs_dm)
+        self.pitchs_wfs     = np.array(pitchs_wfs)
+            
+        # Optimization
+        self.zenithOpt      = np.array(zenithOpt)
+        self.azimuthOpt     = np.array(azimuthOpt)
+        self.weightOpt      = weightOpt/np.sum(weightOpt)
+        self.condmax        = condmax
+
+       
         #%% instantiating sub-classes
         
         # Telescope
@@ -324,8 +166,7 @@ class fourierModel:
             self.L0_mod     = self.L0
             self.wSpeed_mod = self.wSpeed
             self.wDir_mod   = self.wDir_mod
-            
-        
+                  
         # Atmosphere
         self.atm = atmosphere(self.wvlAtm,self.r0*self.tel.airmass**(-3/5),self.weights,self.heights,self.wSpeed,self.wDir,self.L0)
         self.atm_mod = atmosphere(self.wvlAtm,self.r0_mod*self.tel.airmass**(-3/5),self.weights_mod,self.heights_mod,self.wSpeed_mod,self.wDir_mod,self.L0_mod)
@@ -365,7 +206,7 @@ class fourierModel:
         """
         """          
         # Get spectrums    
-        Wn   = self.noiseVariance/(2*self.kc)**2
+        Wn   = np.mean(self.noiseVariance)/(2*self.kc[0])**2
         k    = np.hypot(kx,ky)           
         Wphi = self.atm.spectrum(k);
             
@@ -715,16 +556,17 @@ class fourierModel:
             index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
         elif aoFilter == 'circle':
             index  = np.hypot(kx,ky) <= kc     
-            
-        if self.nGs == 1:        
-            F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-            Wphi = self.atm.spectrum(np.hypot(kx,ky))
         
-            if (self.loopGain == 0):
-                psd[index] = abs(1-F)**2*Wphi[index]
-            else:
-                psd[index] = (1 + abs(F)**2*self.h2[index] - 
-                   2*np.real(F*self.h1[index]))*Wphi[index]
+        if hasattr(self, 'Rx') == False:
+            self.reconstructionFilter(self.kx,self.ky)
+        
+        F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
+        Wphi = self.atm.spectrum(np.hypot(kx,ky))
+        
+        if (self.loopGain == 0):
+            psd[index] = abs(1-F)**2*Wphi[index]
+        else:
+            psd[index] = (1 + abs(F)**2*self.h2[index] - 2*np.real(F*self.h1[index]))*Wphi[index]
             
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
@@ -832,6 +674,59 @@ class fourierModel:
         
         return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
     
+    def tomographyPSD(self,kx,ky,aoFilter='circle'):
+        """%% TOMOGRAPHYPSD Tomographic error power spectrum density
+        """
+        
+        kc = self.kc[0]
+        psd = np.zeros(kx.shape)
+        k = np.hypot(kx,ky)
+        if aoFilter == 'square':
+            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
+        elif aoFilter == 'circle':
+            index  = np.hypot(kx,ky) <= kc       
+            
+        deltaT = self.latency + self.samplingTime
+        nK = len(k[0,:])
+        nH = self.nbLayers
+        Hs = self.heights
+        i    = complex(0,1)
+        d    = self.pitchs_dm[0]
+        wDir_x = np.cos(self.wDir*np.pi/180)
+        wDir_y = np.sin(self.wDir*np.pi/180)
+            
+        Beta = [self.srcj.direction[0],self.srcj.direction[1]]
+            
+        MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
+        for h in range(nH):
+            www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*kx + wDir_y[h]*ky))
+            for g in range(self.nGs):
+                Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
+                fx = Alpha[0]*kx
+                fy = Alpha[1]*ky
+                MPalphaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2*np.pi*Hs[h]*(fx[index]+fy[index]))
+            
+        PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
+        fx = Beta[0]*kx
+        fy = Beta[1]*ky
+        for j in range(nH):
+            PbetaL[index,0,j] = np.exp(i*2*np.pi*( Hs[j]*(fx[index]+fy[index]) -  deltaT*self.wSpeed[j]*(wDir_x[j]*kx[index] + wDir_y[j]*ky[index]) ))
+            
+        W       = self.W
+        Cphi    = self.Cphi # PSD obtained from the true atmosphere
+            
+        proj = np.zeros([nK,nK,1,nH],dtype=complex)
+        for x in range(nK):
+            for y in range(nK):
+                if index[x,y] == True:
+                    proj[x,y] = PbetaL[x,y]- np.dot(W[x,y,:,:],MPalphaL[x,y,:,:])
+            
+        proj_t = np.conj(proj.transpose(0,1,3,2))            
+        psd = np.matmul(proj,np.matmul(Cphi,proj_t))
+        psd = psd.reshape(nK,nK)
+
+        return psd*FourierUtils.pistonFilter(self.tel.D,k)
+        
     def powerSpectrumDensity(self,kx,ky,iSrc=0,aoFilter='circle'):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
@@ -858,10 +753,14 @@ class fourierModel:
         """
         """
         # Constants
-        wvl    = self.src[iSrc].wvl
-        rad2nm = 1e9*wvl/2/np.pi        
-        kx     = self.kx
-        ky     = self.ky
+        self.srcj   = self.src[iSrc]
+        wvl         = self.srcj.wvl
+        self.atm.wvl= wvl
+        self.atm_mod.wvl = wvl
+        rad2nm      = 1e9*wvl/2/np.pi        
+        kx          = self.kx
+        ky          = self.ky
+        self.PbetaDMj = self.PbetaDM[iSrc]
         # DEFINE THE FREQUENCY VECTORS ACROSS ALL SPATIAL FREQUENCIES
         self.resExt = self.resAO*self.nTimes
         kxExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))    
@@ -873,16 +772,14 @@ class fourierModel:
         psdAl  = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
         psdN   = self.noisePSD(kx,ky,aoFilter=aoFilter)
         psdST  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
-        psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
-        psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        
         
         # Derives wavefront error
         self.wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,kxExt),kxExt)))
         self.wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,kx),kx)))
         self.wfeN   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,kx),kx))))
         self.wfeST  = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,kx),kx))))
-        self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
-        self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
+        
         self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
         strehl      = 100*np.exp(-(self.wfeTot/rad2nm)**2)
         
@@ -890,15 +787,25 @@ class fourierModel:
         if verbose == True:
             print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',iSrc+1,' _____')
             print('------------------------------------------')
-            fprintf(sys.stdout,'.Strehl-ratio at %4.2fmicron:\t%4.2f%%\n',wvl*1e6,strehl)
-            fprintf(sys.stdout,'.Residual wavefront error:\t%4.2fnm\n',self.wfeTot)
-            fprintf(sys.stdout,'.Fitting error:\t\t\t%4.2fnm\n',self.wfeFit)
-            fprintf(sys.stdout,'.Aliasing error:\t\t%4.2fnm\n',self.wfeAl)
-            fprintf(sys.stdout,'.Noise error:\t\t\t%4.2fnm\n',self.wfeN)
-            fprintf(sys.stdout,'.Aniso+servoLag error:\t\t%4.2fnm\n',self.wfeST)
+            print('.Strehl-ratio at %4.2fmicron:\t%4.2f%s'%(wvl*1e6,strehl,'%'))
+            print('.Residual wavefront error:\t%4.2fnm'%self.wfeTot)
+            print('.Fitting error:\t\t\t%4.2fnm'%self.wfeFit)
+            print('.Aliasing error:\t\t%4.2fnm'%self.wfeAl)
+            print('.Noise error:\t\t\t%4.2fnm'%self.wfeN)
+            print('.Spatio-temporal error:\t\t%4.2fnm'%self.wfeST)
             print('-------------------------------------------')
-            fprintf(sys.stdout,'.Sole anisoplanatism error:\t%4.2fnm\n',self.wfeAni)
-            fprintf(sys.stdout,'.Sole servoLag error:\t\t%4.2fnm\n',self.wfeS)
+            if self.nGs == 1:
+                psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+                self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
+                print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeAni)
+            else:
+                psdTomo = self.tomographyPSD(kx,ky,aoFilter=aoFilter)
+                self.wfeTomo = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdTomo,kx),kx)))
+                print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeTomo)
+                
+            psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
+            self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
+            print('.Sole servoLag error:\t\t%4.2fnm'%self.wfeS)
             print('-------------------------------------------')
             
         return strehl
@@ -924,7 +831,7 @@ class fourierModel:
         self.SR  = []
         self.PSF = []
         self.PSD = []
-        
+        self.FWHM= []
        
         for j in range(self.nSrc):
             # UPDATE THE ATMOSPHERE WAVELENGTH
@@ -942,7 +849,7 @@ class fourierModel:
                 nqSmpl= lonD/psInMas/2
                 
             fovInPixel = int((np.ceil(2e3*fovInArcsec/psInMas))/2)
-            fovInPixel = max([fovInPixel,2*self.resAO])
+            #fovInPixel = max([fovInPixel,2*self.resAO])
             if verbose:
                 fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
                 print('\n-------------------------------------------\n')
@@ -973,6 +880,8 @@ class fourierModel:
             # GET THE FINAL PSF
             self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
         
+            # GET THE FWHM
+            
         self.elapsed_time_calc = (time.time() - start) 
         print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
         print("Required time for calculating a PSF (s)\t : {:f}".format(self.elapsed_time_calc/self.nSrc))
@@ -980,8 +889,9 @@ class fourierModel:
         self.PSF = np.array(self.PSF)
         self.PSD = np.array(self.PSD)
         self.SR  = np.array(self.SR)
+        self.FWHM  = np.array(self.FWHM)
         
-        return self.PSF,self.PSD
+        return self.PSF,self.PSD,self.SR,self.FWHM
         
     def displayResults(self):
         """
@@ -993,14 +903,13 @@ class fourierModel:
         plt.polar(self.azimuthGs*deg2rad,self.zenithGs,'bs',markersize=7,label='GS position')
         plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
         plt.legend(bbox_to_anchor=(1.05, 1))
-    
-        
+           
         # PSFs
         if self.PSF.any():
             n = self.PSF.shape[-1]
             plt.figure()
             plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[0],self.zenithSrc[-1]))
-            P = np.concatenate((fao.PSF[0,:,:],fao.PSF[-1,:,:]),axis=1)
+            P = np.concatenate((self.PSF[0,:,:],self.PSF[-1,:,:]),axis=1)
             plt.imshow(np.log10(P))
         
         # STREHL-RATIO
@@ -1016,7 +925,7 @@ def demo():
     fao = fourierModel("Parameters.py")
         
     if fao.status:
-        PSF,PSD = fao.getPSF()
+        PSF,PSD,SR,FWHM = fao.getPSF()
         fao.displayResults()
 
     return fao
