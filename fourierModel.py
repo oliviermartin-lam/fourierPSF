@@ -50,7 +50,7 @@ class fourierModel:
         return int(np.round(fovInPixel/self.resAO))
     
     # CONTRUCTOR
-    def __init__(self,file):
+    def __init__(self,file,nyquistSampling=True,calcPSF=True,verbose=False,display=True):
     
         start = time.time()
         # PARSING INPUTS
@@ -63,9 +63,17 @@ class fourierModel:
             kx = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
             ky = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             self.kx,self.ky = np.meshgrid(kx,ky)
-            
-        self.elapsed_time_init = (time.time() - start) 
-        print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
+        
+        if verbose:
+            self.elapsed_time_init = (time.time() - start) 
+            print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
+          
+        if calcPSF:
+            PSF,PSD,SR,FWHM = self.getPSF(verbose=verbose)
+            if display:
+                self.displayResults()
+                
+
           
     def __repr__(self):
         s = "Fourier Model class "
@@ -794,23 +802,24 @@ class fourierModel:
             print('.Noise error:\t\t\t%4.2fnm'%self.wfeN)
             print('.Spatio-temporal error:\t\t%4.2fnm'%self.wfeST)
             print('-------------------------------------------')
+            psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
+            self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
+            print('.Sole servoLag error:\t\t%4.2fnm'%self.wfeS)
+            print('-------------------------------------------')            
             if self.nGs == 1:
                 psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
                 self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
                 print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeAni)
             else:
-                psdTomo = self.tomographyPSD(kx,ky,aoFilter=aoFilter)
-                self.wfeTomo = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdTomo,kx),kx)))
+                #psdTomo = self.tomographyPSD(kx,ky,aoFilter=aoFilter)
+                #self.wfeTomo = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdTomo,kx),kx)))
+                self.wfeTomo = np.sqrt(self.wfeST**2 - self.wfeS)
                 print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeTomo)
-                
-            psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
-            self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
-            print('.Sole servoLag error:\t\t%4.2fnm'%self.wfeS)
             print('-------------------------------------------')
             
         return strehl
     
-    def getPSF(self,aoFilter='circle',nyquistSampling=False,verbose=False):
+    def getPSF(self,aoFilter='circle',nyquistSampling=True,verbose=False):
         """
         """
         start = time.time()
@@ -849,9 +858,9 @@ class fourierModel:
                 nqSmpl= lonD/psInMas/2
                 
             fovInPixel = int((np.ceil(2e3*fovInArcsec/psInMas))/2)
-            #fovInPixel = max([fovInPixel,2*self.resAO])
+
             if verbose:
-                fprintf(sys.stdout,'.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
+                print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
                 print('\n-------------------------------------------\n')
                 
             # DEFINE THE RECONSTRUCTOR
@@ -922,11 +931,9 @@ class fourierModel:
         
 def demo():
     # Instantiate the FourierModel class
-    fao = fourierModel("Parameters.py")
+    #fao = fourierModel("parFile/parFileGeMS.py",nyquistSampling=True,calcPSF=True,verbose=False,display=True)
+    fao = fourierModel("parFile/parFileMAVIS.py",nyquistSampling=True,calcPSF=True,verbose=False,display=True)
         
-    if fao.status:
-        PSF,PSD,SR,FWHM = fao.getPSF()
-        fao.displayResults()
 
     return fao
 

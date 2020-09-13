@@ -44,10 +44,8 @@ if nL_mod != len(weights):
 #%% PSF EVALUATION DIRECTIONS #%%
 nSrc        = 9                                                                 # number of PSF evaluation directions    
 wvlSrc      = 640*np.ones(nSrc)                                                 # Imaging wavelength [nm]
-x           = [0 , 0 , 0 , 8.8 , 8.8 , 8.8 , 17.5 , 17.5 , 17.5]                # X-axis positions
-y           = [0 , 8.8 , 17.5 , 0 , 8.8 , 17.5 , 0 , 8.8 , 17.5]                # Y-axis positions
-zenithSrc   = np.hypot(x,y)
-azimuthSrc  = np.arctan2(y, x)*180/np.pi #[arcseconds]
+zenithSrc   = np.linspace(0,25,num=nSrc)
+azimuthSrc  = 45*np.ones(nSrc) #[arcseconds]
 psInMas     = 7.4                                                               # PSF pixel scale in mas
 fovInPix    = 400                                                               # PSF fov in pixels
 fovInArcsec = psInMas * 1e-3 * fovInPix                                         # PSF fov in arcsec
@@ -71,15 +69,7 @@ latency     = 1                                                                 
 resAO       = 2*nLenslet+1                                                      # AO correction area in pixels in the PSD domain
 
 # NOISE VARIANCE
-nph         = 75*np.ones(nGs)                                                   # number of photon/frame/sub-aperture 
-NS          = 6                                                                 # number of pixels for centroiding
-sa_fov      = 5                                                                 # fov subaperture 6x6pix [arcsec]
-pix_dim     = sa_fov/NS * 1e3                                                 # pixel dimension [mas]
-sig_ron     = 0.2                                                               # read ou noise in e-
-ND          = wvlGs[0]*1e-9/pitchs_wfs*2.06265e8/pix_dim                        # spot FWHM in pixels and without turbulence
-r0_wfs      = r0*(wvlGs[0]/wvlAtm)**1.2                                         # [m]
-NT          = wvlGs[0]*1e-9/r0_wfs*2.06265e8/pix_dim                            #spot FWHM in pixels and with turbulence
-varNoise    = (np.pi**2/3) * ((sig_ron/nph)**2) * (NS**2/ND)**2 + np.pi**2*(NT/ND)**2/(2*nph)
+varNoise    = np.ones(nGs)
 
 # CORRECTION OPTIMIZATION
 zenithOpt   = [0 , 15 , 15 , 15 , 15 , 15 , 15 , 15 , 15, 60 , 60 , 60 , 60 , 60 , 60 , 60 , 60] # Zenith position in arcsec
