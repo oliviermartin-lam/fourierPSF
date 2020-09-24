@@ -13,8 +13,7 @@ import FourierUtils
 D           = 8                                                                 # Telescope diameter  in m
 zenith_angle= 30                                                                # Telescope zenith angle in degrees
 obsRatio    = 0.14                                                              # Central obstruction ratio
-resolution  = 240                                                               # Pupil resolution in pixels
-path_pupil  = "_calib_/vlt_pup_240.fits"                                        # .fits file for the telescope pupil
+resolution  = 200                                                               # Pupil resolution in pixels
 
 #%% TRUE ATMOSPHERE AT ZENITH#%%
 wvlAtm      = 500                                                               # Atmosphere wavelength in nm
@@ -47,8 +46,7 @@ wvlSrc      = 1650*np.ones(nSrc)                                                
 zenithSrc   = np.linspace(0,60,num=nSrc) 
 azimuthSrc  = 45*np.ones(nSrc)                                                  
 psInMas     = 20                                                                # PSF pixel scale in mas
-fovInPix    = 400                                                               # PSF fov in pixels
-fovInArcsec = psInMas * 1e-3 * fovInPix                                         # PSF fov in arcsec
+fovInPix    = 2*resolution                                                      # PSF fov in pixels
 
 #%% GUIDE STAR #%%
 nGs         = 5                                                                 # Number of guide stars

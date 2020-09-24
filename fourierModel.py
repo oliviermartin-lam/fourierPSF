@@ -45,9 +45,7 @@ class fourierModel:
     @property
     def nTimes(self):
         """"""
-        fovInPixel = int((np.ceil(2e3*self.fovInArcsec/self.psInMas))/2)
-        fovInPixel   = max([fovInPixel,2*self.resAO])
-        return int(np.round(fovInPixel/self.resAO))
+        return int(np.round(max([self.fovInPixel,2*self.resAO])/self.resAO))
     
     # CONTRUCTOR
     def __init__(self,file,nyquistSampling=True,calcPSF=True,verbose=False,display=True):
@@ -133,7 +131,7 @@ class fourierModel:
         self.latency        = latency*1e-3
         self.resAO          = resAO
         self.psInMas        = psInMas
-        self.fovInArcsec    = fovInArcsec
+        self.fovInPixel     = fovInPix
         self.h_dm           = np.array(h_dm)
         self.pitchs_dm      = np.array(pitchs_dm)
         self.pitchs_wfs     = np.array(pitchs_wfs)
@@ -830,7 +828,6 @@ class fourierModel:
         
         # GET CONSTANTS
         psInMas     = self.psInMas
-        fovInArcsec = self.fovInArcsec
         dk          = 2*self.kc[0]/self.resAO
         
         # TELESCOPE OTF AT NYQUIST-SAMPLING
@@ -857,10 +854,8 @@ class fourierModel:
             else:
                 nqSmpl= lonD/psInMas/2
                 
-            fovInPixel = int((np.ceil(2e3*fovInArcsec/psInMas))/2)
-
             if verbose:
-                print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',fovInPixel*psInMas/1e3,psInMas,nqSmpl)
+                print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',self.fovInPixel*psInMas/1e3,psInMas,nqSmpl)
                 print('\n-------------------------------------------\n')
                 
             # DEFINE THE RECONSTRUCTOR
@@ -887,7 +882,7 @@ class fourierModel:
             self.SR.append(strehl)
             
             # GET THE FINAL PSF
-            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,fovInPixel))
+            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,self.fovInPixel))
         
             # GET THE FWHM
             
