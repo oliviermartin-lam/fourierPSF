@@ -140,8 +140,8 @@ class fourierModel:
         self.zenithOpt      = np.array(zenithOpt)
         self.azimuthOpt     = np.array(azimuthOpt)
         self.weightOpt      = weightOpt/np.sum(weightOpt)
-        self.condmax        = condmax
-
+        self.condmax_tomo   = condmax
+        self.condmax_popt   = 1e6
        
         #%% instantiating sub-classes
         
@@ -303,7 +303,7 @@ class fourierModel:
             for y in range(to_inv.shape[1]):
                 #if index[x,y] == True : 
                 u,s,vh      = np.linalg.svd(to_inv[x,y,:,:])
-                slim        = np.max(s)/self.condmax
+                slim        = np.max(s)/self.condmax_tomo
                 rank        = np.sum(s > slim)
                 u           = u[:, :rank]
                 u           /= s[:rank]
@@ -346,7 +346,7 @@ class fourierModel:
             for y in range(to_inv.shape[1]):
                 #if index[x,y] == True :
                 u,s,vh          = np.linalg.svd(to_inv[x,y,:,:])
-                slim            = np.max(s)/self.condmax
+                slim            = np.max(s)/self.condmax_popt
                 rank            = np.sum(s > slim)
                 u               = u[:, :rank]
                 u               /= s[:rank]
@@ -817,7 +817,7 @@ class fourierModel:
             
         return strehl
     
-    def getPSF(self,aoFilter='circle',nyquistSampling=True,verbose=False):
+    def getPSF(self,aoFilter='circle',nyquistSampling=True,verbose=False,fftphasor=True):
         """
         """
         start = time.time()
@@ -831,7 +831,7 @@ class fourierModel:
         dk          = 2*self.kc[0]/self.resAO
         
         # TELESCOPE OTF AT NYQUIST-SAMPLING
-        otfTel = FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
+        self.otfTel = FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
         
         # INITIALIZING OUTPUTS
         self.SR  = []
@@ -839,6 +839,17 @@ class fourierModel:
         self.PSD = []
         self.FWHM= []
        
+        # DEFINE THE FFT PHASOR
+        if fftphasor:
+             # FOURIER PHASOR
+             u2D = np.mgrid[0:self.fovInPixel, 0:self.fovInPixel].astype(float)
+             u2D[0] -= self.fovInPixel//2
+             u2D[1] -= self.fovInPixel//2
+             u2D   = u2D /self.fovInPixel
+             phasor = np.exp(-2*complex(0,1)*(u2D[0] + u2D[1]))
+        else:
+             phasor = 1
+              
         for j in range(self.nSrc):
             # UPDATE THE ATMOSPHERE WAVELENGTH
             self.srcj    = self.src[j]
@@ -873,16 +884,16 @@ class fourierModel:
             self.PSD.append(psd)
             psd   = FourierUtils.enlargeSupport(psd,2)
             
-            otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
-            otfAO = FourierUtils.interpolateSupport(otfAO,2*self.tel.resolution)
-            otfAO = otfAO/otfAO.max()
+            self.otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
+            self.otfAO = FourierUtils.interpolateSupport(self.otfAO,2*self.tel.resolution)
+            self.otfAO = self.otfAO/self.otfAO.max()
             
             # GET THE WAVE FRONT ERROR BREAKDOWN
             strehl = self.errorBreakDown(iSrc=j,verbose=verbose)
             self.SR.append(strehl)
             
             # GET THE FINAL PSF
-            self.PSF.append(FourierUtils.otfShannon2psf(otfAO * otfTel,nqSmpl,self.fovInPixel))
+            self.PSF.append(FourierUtils.otfShannon2psf(self.otfAO * self.otfTel * phasor,nqSmpl,self.fovInPixel))
         
             # GET THE FWHM
             

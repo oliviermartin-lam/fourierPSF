@@ -14,10 +14,10 @@ D           = 8                                                                 
 zenith_angle= 30                                                                # Telescope zenith angle in degrees
 obsRatio    = 0.14                                                              # Central obstruction ratio
 resolution  = 200                                                               # Pupil resolution in pixels
-
+path_pupil  = [] 
 #%% TRUE ATMOSPHERE AT ZENITH#%%
 wvlAtm      = 500                                                               # Atmosphere wavelength in nm
-seeing      = 0.8                                                               # Seeing in arcsec
+seeing      = 0.6                                                               # Seeing in arcsec
 r0          = 0.976*wvlAtm*1e-9/seeing*206264.8                                 # Fried's parameter  in m
 L0          = 25                                                                # Outer scale in m
 weights     = [0.59, 0.02, 0.04, 0.06, 0.01, 0.05, 0.09, 0.04, 0.05, 0.05]      # Fractional weights of layers
@@ -41,7 +41,7 @@ if nL_mod != len(weights):
 
 
 #%% PSF EVALUATION DIRECTIONS #%%
-nSrc        = 9                                                                 # number of PSF evaluation directions    
+nSrc        = 9                                                                # number of PSF evaluation directions    
 wvlSrc      = 640*np.ones(nSrc)                                                 # Imaging wavelength [nm]
 zenithSrc   = np.linspace(0,25,num=nSrc)
 azimuthSrc  = 45*np.ones(nSrc) #[arcseconds]
@@ -67,8 +67,17 @@ latency     = 1                                                                 
 resAO       = 2*nLenslet+1                                                      # AO correction area in pixels in the PSD domain
 
 # NOISE VARIANCE
-varNoise    = np.ones(nGs)
-
+rad2mas     = 2.06265e8
+nph         = 10
+sa_fov      = 5              # fov subaperture 6x6pix [arcsec]
+pix_dim     = sa_fov/6.e-3  #pixel dimension [mas]
+sig_ron     = 0.2           # read ou noise in e-
+NS          = 6                  #number of pixels used for the centroiding
+ND          = wvlGs[0]*1e-9/pitchs_wfs*rad2mas/pix_dim #spot FWHM in pixels and without turbulence
+r0_wfs      = r0*(wvlGs[0]/wvlAtm)**1.2 # [m]
+NT          = wvlGs[0]*1e-9/r0_wfs*rad2mas/pix_dim #spot FWHM in pixels and with turbulence
+varNoise    = np.pi**2/3*(sig_ron/nph)**2*(NS**2/ND)**2 + np.pi**2/(2*nph)*(NT/ND)**2*np.ones(nGs)
+varNoise    = 0.1*np.ones(nGs)
 # CORRECTION OPTIMIZATION
 zenithOpt   = [0 , 15 , 15 , 15 , 15 , 15 , 15 , 15 , 15, 60 , 60 , 60 , 60 , 60 , 60 , 60 , 60] # Zenith position in arcsec
 azimuthOpt  = [0 , 0 , 45 , 90 , 135 , 180 , 225 , 270 , 315 , 0 , 45 , 90 , 135 , 180 , 225 , 270 , 315] # Azimuth in degrees
