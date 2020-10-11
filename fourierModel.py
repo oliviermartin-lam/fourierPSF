@@ -16,7 +16,7 @@ Created on Thu Aug 16 15:00:44 2018
 import numpy as np
 import numpy.fft as fft
 import matplotlib.pyplot as plt
-import sys
+import math
 import scipy.special as spc
 import time
 
@@ -45,15 +45,16 @@ class fourierModel:
     @property
     def nTimes(self):
         """"""
-        return int(np.round(max([self.fovInPixel,2*self.resAO])/self.resAO))
-    
+        #return int(np.round(max([self.fovInPixel,2*self.resAO])/self.resAO))
+        return math.ceil(self.fovInPixel/self.resAO)
+
     # CONTRUCTOR
     def __init__(self,file,nyquistSampling=True,calcPSF=True,verbose=False,display=True):
     
         start = time.time()
         # PARSING INPUTS
         self.status = 0
-        self.file         = file  
+        self.file   = file  
         self.status = self.parameters(self.file)        
         
         if self.status:
@@ -86,124 +87,139 @@ class fourierModel:
     
     def parameters(self,file):
                     
+        start = time.time() 
         # run the .py file
         runfile(file)
-            
+                   
+        # Verify array dimensions       
+        #1. Atmosphere layers
+        if len(Cn2Weights) == len(Cn2Heights) == len(wSpeed) == len(wDir):
+            self.nbLayers = len(Cn2Weights)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of atmospheric layers is not consistent in the parameters file\n')
+            return 0
+        
+        #2. Science sources
+        self.src = []
+        if len(ScienceZenith) == len(ScienceAzimuth):
+            self.nSrc = len(ScienceZenith)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of scientific sources is not consistent in the parameters file\n')
+            return 0
+        
+        #3. High-order sources
+        self.src = []
+        if len(GuideStarZenith_HO) == len(GuideStarAzimuth_HO):
+            self.nGs = len(GuideStarZenith_HO)
+        else:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The number of guide stars for high-order sensing is not consistent in the parameters file\n')
+            return 0
+    
+    
         # Telescope
-        self.D              = D
-        self.zenith_angle   = zenith_angle
-        self.obsRatio       = obsRatio
+        self.D              = TelescopeDiameter
+        self.zenith_angle   = zenithAngle
+        self.obsRatio       = obscurationRatio
         self.resolution     = resolution
         self.path_pupil     = path_pupil
-            
+
         # True Atmosphere
-        self.wvlAtm         = wvlAtm*1e-9
-        self.r0             = r0
+        self.wvlAtm         = atmosphereWavelength
+        self.r0             = 0.976*self.wvlAtm/seeing*206264.8
         self.L0             = L0
-        self.weights        = np.array(weights)
-        self.heights        = np.array(heights)
+        self.weights        = np.array(Cn2Weights)
+        self.heights        = np.array(Cn2Heights)
         self.wSpeed         = np.array(wSpeed)
         self.wDir           = np.array(wDir)
         
-        # Model atmosphere
-        self.r0_mod         = r0_mod
-        self.L0_mod         = L0_mod
-        self.weights_mod    = np.array(weights_mod)
-        self.heights_mod    = np.array(heights_mod)
-        self.wSpeed_mod     = np.array(wSpeed_mod)
-        self.wDir_mod       = np.array(wDir_mod)
-            
         # Scientific sources
-        self.wvlSrc         = np.array(wvlSrc)
-        self.zenithSrc      = np.array(zenithSrc)
-        self.azimuthSrc     = np.array(azimuthSrc)
-            
-        # Guide stars
-        self.wvlGs          = np.array(wvlGs)
-        self.zenithGs       = np.array(zenithGs)
-        self.azimuthGs      = np.array(azimuthGs)
-        self.heightGs       = heightGs
-            
-        # AO parameters
-        self.noiseVariance  = varNoise
-        self.loopGain       = loopGain
-        self.samplingTime   = samplingTime*1e-3
-        self.latency        = latency*1e-3
-        self.resAO          = resAO
+        self.nSrc           = len(ScienceZenith)
+        self.wvlSrc         = ScienceWavelength*np.ones(self.nSrc)
+        self.zenithSrc      = np.array(ScienceZenith)
+        self.azimuthSrc     = np.array(ScienceAzimuth)
         self.psInMas        = psInMas
-        self.fovInPixel     = fovInPix
-        self.h_dm           = np.array(h_dm)
-        self.pitchs_dm      = np.array(pitchs_dm)
-        self.pitchs_wfs     = np.array(pitchs_wfs)
+        self.fovInPixel     = round(psf_FoV*1e3/psInMas)
+        
+        # Guide stars
+        self.nGs            = len(GuideStarZenith_HO)
+        self.wvlGs          = SensingWavelength_HO*np.ones(self.nGs)
+        self.zenithGs       = np.array(GuideStarZenith_HO)
+        self.azimuthGs      = np.array(GuideStarAzimuth_HO)
+        self.heightGs       = GuideStarHeight_HO
             
-        # Optimization
-        self.zenithOpt      = np.array(zenithOpt)
-        self.azimuthOpt     = np.array(azimuthOpt)
-        self.weightOpt      = weightOpt/np.sum(weightOpt)
-        self.condmax_tomo   = condmax
-        self.condmax_popt   = 1e6
+        # WFS parameters
+        self.nLenslet_HO    = nLenslet_HO
+        self.resAO          = 2*self.nLenslet_HO + 1
+        self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
+        self.nph_HO         = nph_HO
+        ND                  = self.wvlGs[0]/self.pitchs_wfs[0]*206264.8e3/pixel_scale_HO #spot FWHM in pixels and without turbulence
+        varRON              = np.pi**2/3*(sigmaRON_HO/self.nph_HO)**2*(Npix_per_subap_HO**2/ND)**2
+        NT                  = self.wvlGs[0]/self.r0*(self.wvlGs[0]/self.wvlAtm)**1.2 * 206264.8e3/pixel_scale_HO
+        varShot             = np.pi**2/(2*self.nph_HO)*(NT/ND)**2
+        self.noiseVariance  = (varRON + varShot) *np.ones(self.nGs)
+        self.loopGain       = loopGain_HO
+        self.samplingTime   = 1/SensorFrameRate_HO
+        self.latency        = loopDelaySteps_HO*self.samplingTime
+        
+        # DM parameters
+        self.h_dm           = np.array(DmHeights)
+        self.pitchs_dm      = np.array(DmPitchs)
+        self.zenithOpt      = np.array(OptimizationZenith)
+        self.azimuthOpt     = np.array(OptimizationAzimuth)
+        self.weightOpt      = OptimizationWeight/np.sum(OptimizationWeight)
+        self.condmax_tomo   = OptimizationConditioning
+        self.condmax_popt   = OptimizationConditioning
        
         #%% instantiating sub-classes
         
         # Telescope
         self.tel = telescope(self.D,self.zenith_angle,self.obsRatio,self.resolution,self.path_pupil)
         
-        # Strechning factor (LGS case)
-        if len(self.weights) == len(self.heights) == len(self.wDir) == len(self.wSpeed):
-            self.nbLayers = len(self.weights)
-        else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('The number of atmospheric layers is not consistent in the parameters file\n')
-            return 0
-               
+        # Strechning factor (LGS case)        
         self.heights  = self.heights*self.tel.airmass
         self.heightGs = self.heightGs*self.tel.airmass # LGS height
         if self.heightGs > 0:
             self.heights = self.heights/(1 - self.heights/self.heightGs)
-            
-        # Model atmosphere    
-        if self.heights_mod.any():
-            self.heights_mod  = self.heights_mod*self.tel.airmass
-            if self.heightGs > 0:
-                self.heights_mod = self.heights_mod/(1 - self.heights_mod/self.heightGs)
+                    
+        # Model atmosphere
+        self.r0_mod         = self.r0
+        self.L0_mod         = self.L0
+        
+        if nLayersReconstructed < len(self.weights):
+            self.weights_mod,self.heights_mod = FourierUtils.eqLayers(self.weights,self.heights,nLayersReconstructed)
+            self.wSpeed_mod = np.linspace(min(self.wSpeed),max(self.wSpeed),num=nLayersReconstructed)
+            self.wDir_mod   = np.linspace(min(self.wDir),max(self.wDir),num=nLayersReconstructed)
         else:
-            self.heights_mod= self.heights
-            self.r0_mod     = self.r0
-            self.L0_mod     = self.L0
-            self.wSpeed_mod = self.wSpeed
-            self.wDir_mod   = self.wDir_mod
-                  
+            self.weights_mod    = self.weights
+            self.heights_mod    = self.heights
+            self.wSpeed_mod     = self.wSpeed
+            self.wDir_mod       = self.wDir
+            
         # Atmosphere
         self.atm = atmosphere(self.wvlAtm,self.r0*self.tel.airmass**(-3/5),self.weights,self.heights,self.wSpeed,self.wDir,self.L0)
         self.atm_mod = atmosphere(self.wvlAtm,self.r0_mod*self.tel.airmass**(-3/5),self.weights_mod,self.heights_mod,self.wSpeed_mod,self.wDir_mod,self.L0_mod)
         
         # Scientific Sources
         self.src = []
-        if len(self.wvlSrc) == len(self.zenithSrc) == len(self.azimuthSrc):
-            self.nSrc = len(self.wvlSrc)
-            src = source(self.wvlSrc*1e-9,self.zenithSrc,self.azimuthSrc,0,self.nSrc+1,"SCIENTIFIC STAR",verbose=True)
-            for n in range(self.nSrc):
-                self.src.append(source(self.wvlSrc[n]*1e-9,self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
-        else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('The number of scientific sources is not consistent in the parameters file\n')
-            return 0
-            
+        src = source(self.wvlSrc,self.zenithSrc,self.azimuthSrc,0,self.nSrc+1,"SCIENTIFIC STAR",verbose=True)
+        for n in range(self.nSrc):
+            self.src.append(source(self.wvlSrc[n],self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
+                   
         # Guide stars
         self.gs = []
-        if len(self.wvlGs) == len(self.zenithGs) == len(self.azimuthGs):
-            self.nGs = len(self.wvlGs)
-            for n in range(self.nGs):
-                self.gs.append(source(self.wvlGs[n]*1e-9,self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
-            if len(self.pitchs_wfs) == 1:
-                self.pitchs_wfs = self.pitchs_wfs * np.ones(self.nGs)
-            #pdb.set_trace()    
-            if len(self.noiseVariance) == 1:
-                self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
-        else:
-            print('%%%%%%%% ERROR %%%%%%%%')
-            print('The number of guide stars is not consistent in the parameters file\n')
-            return 0
+        for n in range(self.nGs):
+            self.gs.append(source(self.wvlGs[n],self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
+        if len(self.pitchs_wfs) == 1:
+            self.pitchs_wfs = self.pitchs_wfs * np.ones(self.nGs)
+        if len(self.noiseVariance) == 1:
+            self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
+        
+        
+        self.tinit = (time.time() - start) 
+        print("Required time for initialization (s)\t : {:f}".format(self.tinit))
         
         return 1
     
@@ -238,6 +254,8 @@ class fourierModel:
         self.Ry[N,N] = 0
 
     def tomographicReconstructor(self,kx,ky):
+        
+        tstart = time.time()
         k       = np.hypot(kx,ky)     
         nK      = len(k[0,:])
         nL      = len(self.heights)
@@ -311,9 +329,12 @@ class fourierModel:
                 
         Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)
         
+        self.ttomo = time.time() - tstart
         return Wtomo
         
     def optimalProjector(self,kx,ky):
+        
+        tstart = time.time()
         nDm     = len(self.h_dm)
         nDir    = (len(self.zenithOpt))
         nL      = len(self.heights_mod)
@@ -354,6 +375,7 @@ class fourierModel:
         
         Popt = np.matmul(mat2,mat1)
         
+        self.topt = time.time() - tstart
         return Popt
     
     def finalReconstructor(self,kx,ky):
@@ -820,7 +842,7 @@ class fourierModel:
     def getPSF(self,aoFilter='circle',nyquistSampling=True,verbose=False,fftphasor=True):
         """
         """
-        start = time.time()
+        start0 = time.time()
         
         if not self.status:
             print("The fourier Model class must be instantiated first\n")
@@ -870,16 +892,21 @@ class fourierModel:
                 print('\n-------------------------------------------\n')
                 
             # DEFINE THE RECONSTRUCTOR
+            t1 = time.time()
             if self.nGs <2:
                 self.reconstructionFilter(self.kx,self.ky)
             else:
                 self.finalReconstructor(self.kx,self.ky)
                 self.PbetaDMj = self.PbetaDM[j]
+            self.trec = time.time() - t1
             
             # DEFINE THE CONTROLLER
+            t1 = time.time()
             self.controller(self.kx,self.ky)
-            
-            # GET THE AO RESIDUAL PSD/OTF     
+            self.tcont = time.time() - t1
+
+            # GET THE AO RESIDUAL PSD/OTF
+            t1 = time.time()
             psd   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=j,aoFilter=aoFilter)        
             self.PSD.append(psd)
             psd   = FourierUtils.enlargeSupport(psd,2)
@@ -887,20 +914,32 @@ class fourierModel:
             self.otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
             self.otfAO = FourierUtils.interpolateSupport(self.otfAO,2*self.tel.resolution)
             self.otfAO = self.otfAO/self.otfAO.max()
+            self.totf = time.time() - t1
             
             # GET THE WAVE FRONT ERROR BREAKDOWN
+            t1 = time.time()
             strehl = self.errorBreakDown(iSrc=j,verbose=verbose)
             self.SR.append(strehl)
+            self.terr = time.time() - t1
             
             # GET THE FINAL PSF
+            t1 = time.time()
             self.PSF.append(FourierUtils.otfShannon2psf(self.otfAO * self.otfTel * phasor,nqSmpl,self.fovInPixel))
-        
+            self.tpsf = time.time() - t1
+
             # GET THE FWHM
             
-        self.elapsed_time_calc = (time.time() - start) 
-        print("Required time for total calculation (s)\t : {:f}".format(self.elapsed_time_calc))
-        print("Required time for calculating a PSF (s)\t : {:f}".format(self.elapsed_time_calc/self.nSrc))
-        
+        self.tcalc = (time.time() - start0) 
+        print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
+        print("Required time for calculating a PSF (s)\t : {:f}".format(self.tcalc/self.nSrc))
+        print("Required time for reconstructor init (s) : {:f}".format(self.trec))
+        print("Required time for tomography init (s)\t : {:f}".format(self.ttomo))
+        print("Required time for optimization init (s)\t : {:f}".format(self.topt))
+        print("Required time for controller init (s)\t : {:f}".format(self.tcont))
+        print("Required time for otf calculation (s)\t : {:f}".format(self.totf))
+        print("Required time for error calculation (s)\t : {:f}".format(self.terr))
+        print("Required time for psf calculation (s)\t : {:f}".format(self.tpsf))
+
         self.PSF = np.array(self.PSF)
         self.PSD = np.array(self.PSD)
         self.SR  = np.array(self.SR)
