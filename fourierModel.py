@@ -49,10 +49,11 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
-    def __init__(self,file,nyquistSampling=True,calcPSF=True,verbose=False,display=True):
+    def __init__(self,file,calcPSF=True,verbose=False,display=True):
     
         start = time.time()
         # PARSING INPUTS
+        self.verbose = verbose
         self.status = 0
         self.file   = file  
         self.status = self.parameters(self.file)        
@@ -63,7 +64,7 @@ class fourierModel:
             ky = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             self.kx,self.ky = np.meshgrid(kx,ky)
         
-        if verbose:
+        if self.verbose:
             self.elapsed_time_init = (time.time() - start) 
             print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
           
@@ -140,8 +141,23 @@ class fourierModel:
         self.wvlSrc         = ScienceWavelength*np.ones(self.nSrc)
         self.zenithSrc      = np.array(ScienceZenith)
         self.azimuthSrc     = np.array(ScienceAzimuth)
-        self.psInMas        = psInMas
-        self.fovInPixel     = round(psf_FoV*1e3/psInMas)
+        
+        # Sampling
+        lonD  = (1e3*180*3600/np.pi*ScienceWavelength/TelescopeDiameter)
+        if psInMas == 0:
+            self.psInMas    = lonD/2
+            self.fovInPixel = 2*self.resolution
+        else:
+            self.psInMas    = psInMas
+            self.fovInPixel = round(psf_FoV*1e3/self.psInMas)
+
+        self.samp= lonD/self.psInMas/2
+        
+
+        if self.verbose:
+            print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Over-sampling:\t\t%4.2f'%(self.fovInPixel*self.psInMas/1e3,self.psInMas,self.samp))
+            print('\n-------------------------------------------\n')
+        
         
         # Guide stars
         self.nGs            = len(GuideStarZenith_HO)
@@ -317,21 +333,20 @@ class fourierModel:
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
         inv     = np.zeros(to_inv.shape,dtype=complex)
         
+        u,s,vh      = np.linalg.svd(to_inv)
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                #if index[x,y] == True : 
-                u,s,vh      = np.linalg.svd(to_inv[x,y,:,:])
-                slim        = np.max(s)/self.condmax_tomo
-                rank        = np.sum(s > slim)
-                u           = u[:, :rank]
-                u           /= s[:rank]
-                inv[x,y,:,:]=  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
-                
+                slim        = np.amax(s[x,y])/self.condmax_tomo
+                rank        = np.sum(s[x,y] > slim)
+                uu           = u[x, y, :, :rank]
+                uu           /= s[x,y, :rank]
+                inv[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
         Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)
         
         self.ttomo = time.time() - tstart
         return Wtomo
-        
+ 
+
     def optimalProjector(self,kx,ky):
         
         tstart = time.time()
@@ -363,21 +378,20 @@ class fourierModel:
             
         mat2 = np.zeros(to_inv.shape,dtype=complex)
         
+        u,s,vh      = np.linalg.svd(to_inv)
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                #if index[x,y] == True :
-                u,s,vh          = np.linalg.svd(to_inv[x,y,:,:])
-                slim            = np.max(s)/self.condmax_popt
-                rank            = np.sum(s > slim)
-                u               = u[:, :rank]
-                u               /= s[:rank]
-                mat2[x,y,:,:]   =  np.transpose(np.conjugate(np.dot(u, vh[:rank])))
+                slim        = np.amax(s[x,y])/self.condmax_tomo
+                rank        = np.sum(s[x,y] > slim)
+                uu           = u[x, y, :, :rank]
+                uu           /= s[x,y, :rank]
+                mat2[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
         
         Popt = np.matmul(mat2,mat1)
         
         self.topt = time.time() - tstart
         return Popt
-    
+ 
     def finalReconstructor(self,kx,ky):
         self.Wtomo  = self.tomographicReconstructor(kx,ky)
         self.Popt   = self.optimalProjector(kx,ky)
@@ -474,12 +488,13 @@ class fourierModel:
         self.h2 = h2
         self.hn = hn
                 
+        
  #%% PSD DEFINTIONS      
     def fittingPSD(self,kx,ky,aoFilter='circle'):
         """ FITTINGPSD Fitting error power spectrum density """                 
         #Instantiate the function output
         kc          = self.kc[0]
-        resExt      = kx.shape[0]*self.nTimes 
+        resExt      = self.fovInPixel#kx.shape[0]*self.nTimes 
         kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
         kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
@@ -760,7 +775,7 @@ class fourierModel:
         """
         # COmputation of the extended spatial frequencies domain
         kc          = self.kc[0] 
-        resExt      = kx.shape[0]*self.nTimes 
+        resExt      = self.fovInPixel#kx.shape[0]*self.nTimes 
         kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
         kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
@@ -790,7 +805,7 @@ class fourierModel:
         ky          = self.ky
         self.PbetaDMj = self.PbetaDM[iSrc]
         # DEFINE THE FREQUENCY VECTORS ACROSS ALL SPATIAL FREQUENCIES
-        self.resExt = self.resAO*self.nTimes
+        self.resExt = self.fovInPixel#self.resAO*self.nTimes
         kxExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))    
         kyExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))            
         kxExt,kyExt = np.meshgrid(kxExt,kyExt)
@@ -839,7 +854,7 @@ class fourierModel:
             
         return strehl
     
-    def getPSF(self,aoFilter='circle',nyquistSampling=True,verbose=False,fftphasor=True):
+    def getPSF(self,aoFilter='circle',verbose=False,fftphasor=True):
         """
         """
         start0 = time.time()
@@ -864,11 +879,9 @@ class fourierModel:
         # DEFINE THE FFT PHASOR
         if fftphasor:
              # FOURIER PHASOR
-             u2D = np.mgrid[0:self.fovInPixel, 0:self.fovInPixel].astype(float)
-             u2D[0] -= self.fovInPixel//2
-             u2D[1] -= self.fovInPixel//2
-             u2D   = u2D /self.fovInPixel
-             phasor = np.exp(-2*complex(0,1)*(u2D[0] + u2D[1]))
+             uu =  fft.fftshift(fft.fftfreq(self.fovInPixel))  
+             ux,uy = np.meshgrid(uu,uu)
+             phasor = np.exp(-complex(0,1)*np.pi*(ux + uy))
         else:
              phasor = 1
               
@@ -879,18 +892,6 @@ class fourierModel:
             self.atm.wvl = wvl
             self.atm_mod.wvl = wvl
             
-            # CALCULATING THE PSF SAMPLING        
-            lonD  = (1e3*180*3600/np.pi*wvl/self.tel.D)
-            if nyquistSampling == True:
-                nqSmpl = 1
-                psInMas= lonD/2
-            else:
-                nqSmpl= lonD/psInMas/2
-                
-            if verbose:
-                print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Nyquist sampling:\t%4.2f',self.fovInPixel*psInMas/1e3,psInMas,nqSmpl)
-                print('\n-------------------------------------------\n')
-                
             # DEFINE THE RECONSTRUCTOR
             t1 = time.time()
             if self.nGs <2:
@@ -924,7 +925,7 @@ class fourierModel:
             
             # GET THE FINAL PSF
             t1 = time.time()
-            self.PSF.append(FourierUtils.otfShannon2psf(self.otfAO * self.otfTel * phasor,nqSmpl,self.fovInPixel))
+            self.PSF.append(FourierUtils.otfShannon2psf(self.otfAO * self.otfTel * phasor,self.samp,self.fovInPixel))
             self.tpsf = time.time() - t1
 
             # GET THE FWHM
@@ -977,7 +978,7 @@ class fourierModel:
 def demo():
     # Instantiate the FourierModel class
     #fao = fourierModel("parFile/parFileGeMS.py",nyquistSampling=True,calcPSF=True,verbose=False,display=True)
-    fao = fourierModel("parFile/parFileMAVIS.py",nyquistSampling=True,calcPSF=True,verbose=False,display=True)
+    fao = fourierModel("parFile/parFileMAVIS.py",calcPSF=True,verbose=True,display=True)
         
 
     return fao

@@ -17,9 +17,9 @@ nLayersReconstructed= 10                                                        
 
 #%% PSF EVALUATION DIRECTIONS #%%
 ScienceWavelength   = 640e-9                                                            # Imaging wavelength [m]
-ScienceZenith       = [0]                                                               # Distance from on-axis [arcsec]
-ScienceAzimuth      = [45]                                                              # Azimuthal angle [degrees]
-psInMas             = 7.4                                                               # PSF pixel scale in mas, if 0, nyquist Sampling
+ScienceZenith       = [0]                                                         # Distance from on-axis [arcsec]
+ScienceAzimuth      = [45]                                                        # Azimuthal angle [degrees]
+psInMas             = 7.4                                                               # PSF pixel scale in mas
 psf_FoV             = 2.96                                                              # PSF fov [arcsec]
 technical_FoV       = 120                                                               # Technical field of view (diameter)  [arcsec]
 
