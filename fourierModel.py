@@ -49,7 +49,7 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
-    def __init__(self,file,calcPSF=True,verbose=False,display=True):
+    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',getErrorBreakDown=False):
     
         start = time.time()
         # PARSING INPUTS
@@ -60,16 +60,47 @@ class fourierModel:
         
         if self.status:
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
-            kx = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10   
-            ky = 2*self.kc[0]*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
+            kx = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
+            ky = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             self.kx,self.ky = np.meshgrid(kx,ky)
+            self.kxy        = np.hypot(self.kx,self.ky)    
+            
+            # DEFINE THE PISTON FILTER FOR LOW-ORDER FREQUENCIES
+            self.pistonFilterIn_ = FourierUtils.pistonFilter(self.tel.D,self.kxy)
+            
+            # DEFINE THE FREQUENCY DOMAIN OVER THE FULL PSD DOMAIN
+            kxExt           = self.fovInPixel*self.PSDstep*fft.fftshift(fft.fftfreq(self.fovInPixel))
+            kyExt           = self.fovInPixel*self.PSDstep*fft.fftshift(fft.fftfreq(self.fovInPixel))
+            self.kxExt,self.kyExt = np.meshgrid(kxExt,kyExt)
+            self.kExtxy     = np.hypot(self.kxExt,self.kyExt)           
+            
+            # DEFINE THE AO CORRECTION and PSF HALO  REGIONS
+            if aoFilter == 'circle':
+                self.mskIn_  = self.kxy  <= self.kc[0]      
+                self.mskOut_ = np.hypot(self.kxExt,self.kyExt) > self.kc[0]
+            else:
+                self.mskIn_  = (abs(self.kx) <= self.kc[0]) | (abs(self.ky) <= self.kc[0])    
+                self.mskOut_ = (abs(self.kxExt)>self.kc[0]) | (abs(self.kyExt)>self.kc[0])         
+            
+            # DEFINE NOISE AND ATMOSPHERE PSD
+            self.Wn   = np.mean(self.noiseVariance)/(2*self.kc[0])**2
+            self.Wphi = self.atm.spectrum(self.kxy);
+            
+            # DEFINE THE OTF TELESCOPE
+            P                   = np.zeros((self.fovInPixel,self.fovInPixel))
+            id1                 = np.floor(self.fovInPixel/2 - self.tel.resolution/2).astype(int)
+            id2                 = np.floor(self.fovInPixel/2 + self.tel.resolution/2).astype(int)
+            P[id1:id2,id1:id2]  = self.tel.pupil
+            self.otfTel         = np.real(fft.fftshift(FourierUtils.fftCorrel(P,P)))
+            self.otfTel         = self.otfTel/self.otfTel.max()
+        
         
         if self.verbose:
             self.elapsed_time_init = (time.time() - start) 
             print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
           
         if calcPSF:
-            PSF,PSD,SR,FWHM = self.getPSF(verbose=verbose)
+            PSF,PSD,SR,FWHM = self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown)
             if display:
                 self.displayResults()
                 
@@ -146,12 +177,17 @@ class fourierModel:
         lonD  = (1e3*180*3600/np.pi*ScienceWavelength/TelescopeDiameter)
         if psInMas == 0:
             self.psInMas    = lonD/2
-            self.fovInPixel = 2*self.resolution
+            #self.fovInPixel = 2*self.resolution
         else:
             self.psInMas    = psInMas
-            self.fovInPixel = round(psf_FoV*1e3/self.psInMas)
+            #self.fovInPixel = round(psf_FoV*1e3/self.psInMas)
 
-        self.samp= lonD/self.psInMas/2
+        self.samp       = lonD/self.psInMas/2
+        if self.samp >=1:
+            self.fovInPixel = round(self.resolution*self.samp*2)
+        else:
+            self.fovInPixel = round(2*self.resolution/self.samp)
+        
         
 
         if self.verbose:
@@ -168,7 +204,6 @@ class fourierModel:
             
         # WFS parameters
         self.nLenslet_HO    = nLenslet_HO
-        self.resAO          = 2*self.nLenslet_HO + 1
         self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
         self.nph_HO         = nph_HO
         ND                  = self.wvlGs[0]/self.pitchs_wfs[0]*206264.8e3/pixel_scale_HO #spot FWHM in pixels and without turbulence
@@ -188,7 +223,11 @@ class fourierModel:
         self.weightOpt      = OptimizationWeight/np.sum(OptimizationWeight)
         self.condmax_tomo   = OptimizationConditioning
         self.condmax_popt   = OptimizationConditioning
-       
+        
+        # Sampling
+        self.PSDstep        = self.psInMas/1e3/ScienceWavelength/206264.8
+        self.resAO          = int(1/np.min(self.pitchs_dm)/self.PSDstep)
+
         #%% instantiating sub-classes
         
         # Telescope
@@ -240,23 +279,19 @@ class fourierModel:
         return 1
     
 #%% RECONSTRUCTOR DEFINITION    
-    def reconstructionFilter(self,kx,ky):
+    def reconstructionFilter(self):
         """
         """          
-        # Get spectrums    
-        Wn   = np.mean(self.noiseVariance)/(2*self.kc[0])**2
-        k    = np.hypot(kx,ky)           
-        Wphi = self.atm.spectrum(k);
-            
+       
         # reconstructor derivation
         i    = complex(0,1)
         d    = self.pitchs_dm[0]   
-        Sx   = 2*i*np.pi*kx*d
-        Sy   = 2*i*np.pi*ky*d                        
-        Av   = np.sinc(d*kx)*np.sinc(d*ky)*np.exp(i*np.pi*d*(kx+ky))        
+        Sx   = 2*i*np.pi*self.kx*d
+        Sy   = 2*i*np.pi*self.ky*d                        
+        Av   = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
         self.SxAv = Sx*Av
         self.SyAv = Sy*Av
-        gPSD = abs(self.SxAv)**2 + abs(self.SyAv)**2 + Wn/Wphi
+        gPSD = abs(self.SxAv)**2 + abs(self.SyAv)**2 + self.Wn/self.Wphi
         self.Rx = np.conjugate(self.SxAv)/gPSD
         self.Ry = np.conjugate(self.SyAv)/gPSD
                 
@@ -265,15 +300,14 @@ class fourierModel:
         self.Ry[np.isnan(self.Ry)] = 0
             
         # Set central point (i.e. kx=0,ky=0) to zero
-        N = int(np.ceil((kx.shape[0]-1)/2))
+        N = int(np.ceil((self.kx.shape[0]-1)/2))
         self.Rx[N,N] = 0
         self.Ry[N,N] = 0
 
-    def tomographicReconstructor(self,kx,ky):
+    def tomographicReconstructor(self):
         
         tstart = time.time()
-        k       = np.hypot(kx,ky)     
-        nK      = len(k[0,:])
+        nK      = self.resAO
         nL      = len(self.heights)
         nL_mod  = len(self.heights_mod)
         nGs     = self.nGs
@@ -287,15 +321,15 @@ class fourierModel:
         d    = self.pitchs_wfs   #sub-aperture size      
         M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
         for j in np.arange(0,nGs):
-            M[:,:,j,j] = 2*i*np.pi*k*np.sinc(d[j]*kx)*np.sinc(d[j]*ky)
+            M[:,:,j,j] = 2*i*np.pi*self.kxy*np.sinc(d[j]*self.kx)*np.sinc(d[j]*self.ky)
         self.M = M
         # Projection matrix
         P    = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)
         
         for n in range(nL_mod):
             for j in range(nGs):
-                fx = kx*Alpha[0,j]
-                fy = ky*Alpha[1,j]
+                fx = self.kx*Alpha[0,j]
+                fy = self.ky*Alpha[1,j]
                 P[:,:,j,n] = np.exp(i*2*np.pi*self.heights_mod[n]*(fx + fy))
                 
         MP = np.matmul(M,P)
@@ -311,23 +345,23 @@ class fourierModel:
         Cphi = np.zeros([nK,nK,nL,nL],dtype=complex)
         cte = (24*spc.gamma(6/5)/5)**(5/6)*(spc.gamma(11/6)**2./(2.*np.pi**(11/3)))
         if nL == 1:
-            Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,k)
+            Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
         else:
             for j in range(nL):
-                Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(k**2 + 1/self.atm.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,k)
+                Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
         self.Cphi = Cphi
         
         # Atmospheric PSD with the modelled atmosphere
         Cphi = np.zeros([nK,nK,nL_mod,nL_mod],dtype=complex)
         if nL_mod == 1:
-            Cphi[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(k**2 + 1/self.atm_mod.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,k)
+            Cphi[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
         else:
             for j in range(nL_mod):
-                Cphi[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(k**2 + 1/self.atm_mod.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,k)
+                Cphi[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)\
+                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
         self.Cphi_mod = Cphi
         
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
@@ -336,10 +370,10 @@ class fourierModel:
         u,s,vh      = np.linalg.svd(to_inv)
         for x in range(to_inv.shape[0]):
             for y in range(to_inv.shape[1]):
-                slim        = np.amax(s[x,y])/self.condmax_tomo
-                rank        = np.sum(s[x,y] > slim)
+                slim         = np.amax(s[x,y])/self.condmax_tomo
+                rank         = np.sum(s[x,y] > slim)
                 uu           = u[x, y, :, :rank]
-                uu           /= s[x,y, :rank]
+                uu          /= s[x,y, :rank]
                 inv[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
         Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)
         
@@ -347,13 +381,13 @@ class fourierModel:
         return Wtomo
  
 
-    def optimalProjector(self,kx,ky):
+    def optimalProjector(self):
         
         tstart = time.time()
         nDm     = len(self.h_dm)
         nDir    = (len(self.zenithOpt))
         nL      = len(self.heights_mod)
-        nK      = len(kx[0,:])
+        nK      = self.resAO
         i       = complex(0,1)
         
         mat1    = np.zeros([nK,nK,nDm,nL],dtype=complex)
@@ -364,10 +398,10 @@ class fourierModel:
         for d_o in range(nDir):                 #loop on optimization directions
             Pdm = np.zeros([nK,nK,1,nDm],dtype=complex)
             Pl  = np.zeros([nK,nK,1,nL],dtype=complex)
-            fx  = theta_x[d_o]*kx
-            fy  = theta_y[d_o]*ky
+            fx  = theta_x[d_o]*self.kx
+            fy  = theta_y[d_o]*self.ky
             for j in range(nDm):                # loop on DM
-                index   = np.hypot(kx,ky) <= self.kc[j]
+                index   = self.kxy <= self.kc[j]
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
             for l in range(nL):                 #loop on atmosphere layers
@@ -383,8 +417,8 @@ class fourierModel:
             for y in range(to_inv.shape[1]):
                 slim        = np.amax(s[x,y])/self.condmax_tomo
                 rank        = np.sum(s[x,y] > slim)
-                uu           = u[x, y, :, :rank]
-                uu           /= s[x,y, :rank]
+                uu          = u[x, y, :, :rank]
+                uu          /= s[x,y, :rank]
                 mat2[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
         
         Popt = np.matmul(mat2,mat1)
@@ -392,36 +426,35 @@ class fourierModel:
         self.topt = time.time() - tstart
         return Popt
  
-    def finalReconstructor(self,kx,ky):
-        self.Wtomo  = self.tomographicReconstructor(kx,ky)
-        self.Popt   = self.optimalProjector(kx,ky)
+    def finalReconstructor(self):
+        self.Wtomo  = self.tomographicReconstructor()
+        self.Popt   = self.optimalProjector()
         self.W      = np.matmul(self.Popt,self.Wtomo)
         
         # Computation of the Pbeta^DM matrix
-        k       = np.hypot(kx,ky)
         nDm     = len(self.h_dm)
-        nK      = len(k[0,:])
+        nK      = self.resAO
 
         self.PbetaDM = []
         for s in range(self.nSrc):
-            fx = self.src[s].direction[0]*kx
-            fy = self.src[s].direction[1]*ky
+            fx = self.src[s].direction[0]*self.kx
+            fy = self.src[s].direction[1]*self.ky
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm): #loop on DMs
-                index   = np.hypot(kx,ky) <= self.kc[j]
+                index   = self.kxy <= self.kc[j]
                 PbetaDM[index,0,j] = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
         
 #%% CONTROLLER DEFINITION
-    def  controller(self,kx,ky,nTh=10):
+    def  controller(self,nTh=10,nF=500):
         """
         """
         
-        i  = complex(0,1)
+        i           = complex(0,1)
         vx          = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
         vy          = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)   
-        nPts        = kx.shape[0]
+        nPts        = self.resAO
         thetaWind   = np.linspace(0, 2*np.pi-2*np.pi/nTh,nTh)
         costh       = np.cos(thetaWind)
         weights     = self.atm.weights
@@ -438,7 +471,6 @@ class fourierModel:
         hnbuf       = np.zeros((nPts,nPts,nTh))
         
         # Get the noise propagation factor
-        nF     = 500   
         f      = np.logspace(-2,np.log10(0.5/1e-3),nF)
         z      = np.exp(-2*i*np.pi*f*Ts)
         hInt   = self.loopGain/(1-z**(-1))
@@ -456,7 +488,7 @@ class fourierModel:
         # Get transfer functions                                        
         for l in np.arange(0,self.atm.nL):
             for iTheta in np.arange(0,nTh):
-                fi      = -vx[l]*kx*costh[iTheta] - vy[l]*ky*costh[iTheta]
+                fi      = -vx[l]*self.kx*costh[iTheta] - vy[l]*self.ky*costh[iTheta]
                 idx     = abs(fi) <1e-7;
                 z       = np.exp(-2*i*np.pi*fi*Ts)
                 fi[idx] = 1e-8*np.sign(fi[idx])
@@ -490,40 +522,20 @@ class fourierModel:
                 
         
  #%% PSD DEFINTIONS      
-    def fittingPSD(self,kx,ky,aoFilter='circle'):
+    def fittingPSD(self):
         """ FITTINGPSD Fitting error power spectrum density """                 
         #Instantiate the function output
-        kc          = self.kc[0]
-        resExt      = self.fovInPixel#kx.shape[0]*self.nTimes 
-        kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
-        kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
-        kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
-        psd         = np.zeros((resExt,resExt))
-            
-        # Define the correction area
-        if aoFilter == 'square':
-            index  = (abs(kxExt)>kc) | (abs(kyExt)>kc)            
-        elif aoFilter == 'circle':
-            index  = np.hypot(kxExt,kyExt) > kc
-            
-        kExt       = np.hypot(kxExt[index],kyExt[index])
-        psd[index] = self.atm.spectrum(kExt)
-        
-        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kxExt,kyExt))
+        psd                 = np.zeros((self.fovInPixel,self.fovInPixel))
+        psd[self.mskOut_]   = self.atm.spectrum(self.kExtxy[self.mskOut_])
+        return psd
     
-    def aliasingPSD(self,kx,ky,aoFilter='circle'):
+    def aliasingPSD(self):
         """
         """
-        kc = self.kc[0]
-        psd = np.zeros(kx.shape)
+        psd = np.zeros((self.resAO,self.resAO))
         tmp = psd
-        if aoFilter == 'square':
-            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-        elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= kc    
         if self.nGs < 2:
             i  = complex(0,1)
-            k  = np.hypot(kx,ky)
             d  = self.pitchs_dm[0]
             T  = self.samplingTime
             td = self.latency        
@@ -543,9 +555,9 @@ class fourierModel:
             for mi in np.arange(-self.nTimes,self.nTimes+1):
                 for ni in np.arange(-self.nTimes,self.nTimes+1):
                     if (mi!=0) | (ni!=0):
-                        km = kx - mi/d
-                        kn = ky - ni/d
-                        PR = FourierUtils.pistonFilter(self.tel.D,k,fm=mi/d,fn=ni/d)
+                        km = self.kx - mi/d
+                        kn = self.ky - ni/d
+                        PR = FourierUtils.pistonFilter(self.tel.D,np.hypot(km,kn),fm=mi/d,fn=ni/d)
                         W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
                         Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
                         avr = 0
@@ -557,242 +569,193 @@ class fourierModel:
                         tmp = tmp + PR*W_mn * abs(Q*avr)**2
                
             tmp[np.isnan(tmp)] = 0        
-            psd[index]         = tmp[index]
+            psd[self.mskIn_]         = tmp[self.mskIn_]
         
         return psd*self.atm.r0**(-5/3)*0.0229 
             
-    def noisePSD(self,kx,ky,aoFilter='circle'):
+    def noisePSD(self):
         """NOISEPSD Noise error power spectrum density
         """
-        kc = self.kc[0];
-        psd = np.zeros(kx.shape,dtype=complex)
+        psd = np.zeros((self.resAO,self.resAO),dtype=complex)
         if self.noiseVariance[0] > 0:
-            if aoFilter == 'square':
-                index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-            elif aoFilter == 'circle':
-                index  = np.hypot(kx,ky) <= kc  
-            
             if self.nGs < 2:        
-                psd[index] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[index])**2 + abs(self.Ry[index]**2));    
+                psd[self.mskIn_] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[self.mskIn_])**2 + abs(self.Ry[self.mskIn_]**2));    
             else:  
-                nK      = len(np.hypot(kx,ky)[0,:])
+                nK      = self.resAO
                 W       = self.W
                 PbetaDM = self.PbetaDMj
                 Cb      = self.Cb
                 PW      = np.matmul(PbetaDM,W)
                 PW_t    = np.conj(PW.transpose(0,1,3,2))
                 
+                #### TO BE OPTIMIZED !!!! ############
                 for x in range(nK):
                     for y in range(nK):
-                        if index[x,y] == True:
+                        if self.mskIn_[x,y] == True:
                             psd[x,y] = np.dot(PW[x,y,:,:],np.dot(Cb[x,y,:,:],PW_t[x,y,:,:]))
-
-        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))*self.noiseGain
+                #### TO BE OPTIMIZED !!!! ############
+        return psd*self.pistonFilterIn_*self.noiseGain
     
-    def servoLagPSD(self,kx,ky,aoFilter='circle'):
+    def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
         """
             
-        kc = self.kc[0]
-        psd = np.zeros(kx.shape)
-        if aoFilter == 'square':
-            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-        elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= kc     
-        
+        psd = np.zeros((self.resAO,self.resAO))    
         if hasattr(self, 'Rx') == False:
-            self.reconstructionFilter(self.kx,self.ky)
-        
-        F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-        Wphi = self.atm.spectrum(np.hypot(kx,ky))
-        
+            self.reconstructionFilter()
+
+        F = (self.Rx[self.mskIn_]*self.SxAv[self.mskIn_] + self.Ry[self.mskIn_]*self.SyAv[self.mskIn_])        
         if (self.loopGain == 0):
-            psd[index] = abs(1-F)**2*Wphi[index]
+            psd[self.mskIn_] = abs(1-F)**2*self.Wphi[self.mskIn_]
         else:
-            psd[index] = (1 + abs(F)**2*self.h2[index] - 2*np.real(F*self.h1[index]))*Wphi[index]
+            psd[self.mskIn_] = (1 + abs(F)**2*self.h2[self.mskIn_] - 2*np.real(F*self.h1[self.mskIn_]))*self.Wphi[self.mskIn_]
             
-        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
+        return psd*self.pistonFilterIn_
     
-    def spatioTemporalPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
+    def spatioTemporalPSD(self):
         """%% SPATIOTEMPORALPSD Power spectrum density including reconstruction, field variations and temporal effects
         """
            
-        kc = self.kc[0]
-        psd = np.zeros(kx.shape)
-        k = np.hypot(kx,ky)
-        if aoFilter == 'square':
-            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-        elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= kc       
-        
+        psd = np.zeros((self.resAO,self.resAO))        
         if self.nGs < 2:
             heights = self.atm.heights
             weights = self.atm.weights
-            A       = 0*kx
+            A       = 0*self.kx
             if sum(sum(abs(self.srcj.direction - self.gs[0].direction)))!=0:
                 th  = self.srcj.direction - self.gs[0].direction
                 for l in np.arange(0,self.atm.nL):                
-                    red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
+                    red = 2*np.pi*heights[l]*(self.kx*th[0] + self.ky*th[1])
                     A   = A + weights[l]*np.exp(complex(0,1)*red)            
             else:
-                A = np.ones(kx.shape)
+                A = np.ones(self.resAO)
         
-            F = (self.Rx[index]*self.SxAv[index] + self.Ry[index]*self.SyAv[index])
-            Wphi = self.atm.spectrum(np.hypot(kx,ky))   
+            F = (self.Rx[self.mskIn_]*self.SxAv[self.mskIn_] + self.Ry[self.mskIn_]*self.SyAv[self.mskIn_])
+
             
             if (self.loopGain == 0):  
-                psd[index] = abs(1-F)**2*A*Wphi[index]
+                psd[self.mskIn_] = abs(1-F)**2*A*self.Wphi[self.mskIn_]
             else:
-                psd[index] = (1 + abs(F)**2*self.h2[index] 
-                - 2*np.real(F*self.h1[index]*A[index]))*Wphi[index]
+                psd[self.mskIn_] = (1 + abs(F)**2*self.h2[self.mskIn_] 
+                - 2*np.real(F*self.h1[self.mskIn_]*A[self.mskIn_]))*self.Wphi[self.mskIn_]
                                 
         else:
             
-            deltaT = self.latency+self.samplingTime
-            nK = len(k[0,:])
-            nH = self.nbLayers
-            Hs = self.heights
-            i    = complex(0,1)
-            d    = self.pitchs_dm[0]
-            wDir_x = np.cos(self.wDir*np.pi/180)
-            wDir_y = np.sin(self.wDir*np.pi/180)
+            deltaT  = self.latency+self.samplingTime
+            nK      = self.resAO
+            nH      = self.nbLayers
+            Hs      = self.heights
+            i       = complex(0,1)
+            d       = self.pitchs_dm[0]
+            wDir_x  = np.cos(self.wDir*np.pi/180)
+            wDir_y  = np.sin(self.wDir*np.pi/180)
             
             Beta = [self.srcj.direction[0],self.srcj.direction[1]]
             
             MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
             for h in range(nH):
-                www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*kx + wDir_y[h]*ky))
+                www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*self.kx + wDir_y[h]*self.ky))
                 for g in range(self.nGs):
                     Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
-                    fx = Alpha[0]*kx
-                    fy = Alpha[1]*ky
-                    MPalphaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2*np.pi*Hs[h]*(fx[index]+fy[index]))
+                    fx = Alpha[0]*self.kx
+                    fy = Alpha[1]*self.ky
+                    MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])*\
+                    np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
             
             PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
-            fx = Beta[0]*kx
-            fy = Beta[1]*ky
+            fx = Beta[0]*self.kx
+            fy = Beta[1]*self.ky
             for j in range(nH):
-                PbetaL[index,0,j] = np.exp(i*2*np.pi*( Hs[j]*(fx[index]+fy[index]) -  deltaT*self.wSpeed[j]*(wDir_x[j]*kx[index] + wDir_y[j]*ky[index]) ))
+                PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
+                      (fx[self.mskIn_]+fy[self.mskIn_]) -  deltaT*self.wSpeed[j]\
+                      *(wDir_x[j]*self.kx[self.mskIn_] + wDir_y[j]*self.ky[self.mskIn_]) ))
             
             PbetaDM = self.PbetaDMj
             W       = self.W
             Cphi    = self.Cphi # PSD obtained from the true atmosphere
             
-            proj = np.zeros([nK,nK,1,nH],dtype=complex)
-            for x in range(nK):
-                for y in range(nK):
-                    if index[x,y] == True:
-                        proj[x,y] = PbetaL[x,y]- np.dot(PbetaDM[x,y,:,:],np.dot(W[x,y,:,:],MPalphaL[x,y,:,:]))
-            proj_t = np.conj(proj.transpose(0,1,3,2))
-            
-            psd = np.matmul(proj,np.matmul(Cphi,proj_t))
-            psd = psd.reshape(nK,nK)
-
-        return psd*FourierUtils.pistonFilter(self.tel.D,k)
+            proj = PbetaL - np.matmul(PbetaDM,np.matmul(W,MPalphaL))            
+            proj_t  = np.conj(proj.transpose(0,1,3,2))
+            psd     = np.matmul(proj,np.matmul(Cphi,proj_t))
+            psd     = psd[:,:,0,0]
+        return psd*self.pistonFilterIn_
     
-    def anisoplanatismPSD(self,kx,ky,iSrc=0,aoFilter='circle'):
+    def anisoplanatismPSD(self):
         """%% ANISOPLANATISMPSD Anisoplanatism power spectrum density
         """
         
-        kc = self.kc[0]
-        psd = np.zeros(kx.shape)
-        if aoFilter == 'square':
-            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-        elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= kc        
-        
+        psd = np.zeros((self.resAO,self.resAO))
         heights = self.atm.heights
         weights = self.atm.weights
-        A       = 0*kx
+        A       = 0*self.kx
         if sum(sum(abs(self.srcj.direction - self.gs[0].direction)))!=0:
             th  = self.srcj.direction - self.gs[0].direction
             for l in np.arange(0,self.atm.nL):
-                red = 2*np.pi*heights[l]*(kx*th[0] + ky*th[1])
+                red = 2*np.pi*heights[l]*(self.kx*th[0] + self.ky*th[1])
                 A   = A + 2*weights[l]*( 1 - np.cos(red) )     
         else:
-            A = np.zeros(kx.shape)
+            A = np.ones(self.resAO)
         
-        Wphi       = self.atm.spectrum(np.hypot(kx,ky))   
-        psd[index] = A[index]*Wphi[index]
+        psd[self.mskIn_] = A[self.mskIn_]*self.Wphi[self.mskIn_]
         
-        return psd*FourierUtils.pistonFilter(self.tel.D,np.hypot(kx,ky))
+        return psd*self.pistonFilterIn_
     
-    def tomographyPSD(self,kx,ky,aoFilter='circle'):
+    def tomographyPSD(self):
         """%% TOMOGRAPHYPSD Tomographic error power spectrum density
         """
-        
-        kc = self.kc[0]
-        psd = np.zeros(kx.shape)
-        k = np.hypot(kx,ky)
-        if aoFilter == 'square':
-            index  = (abs(kx) <=kc) | (abs(ky) <= kc)               
-        elif aoFilter == 'circle':
-            index  = np.hypot(kx,ky) <= kc       
-            
-        deltaT = self.latency + self.samplingTime
-        nK = len(k[0,:])
-        nH = self.nbLayers
-        Hs = self.heights
-        i    = complex(0,1)
-        d    = self.pitchs_dm[0]
-        wDir_x = np.cos(self.wDir*np.pi/180)
-        wDir_y = np.sin(self.wDir*np.pi/180)
+        nK      = self.resAO
+        psd     = np.zeros((nK,nK))
+        deltaT  = self.latency + self.samplingTime
+        nH      = self.nbLayers
+        Hs      = self.heights
+        i       = complex(0,1)
+        d       = self.pitchs_dm[0]
+        wDir_x  = np.cos(self.wDir*np.pi/180)
+        wDir_y  = np.sin(self.wDir*np.pi/180)
             
         Beta = [self.srcj.direction[0],self.srcj.direction[1]]
             
         MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
         for h in range(nH):
-            www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*kx + wDir_y[h]*ky))
+            www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*self.kx + wDir_y[h]*self.ky))
             for g in range(self.nGs):
                 Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
-                fx = Alpha[0]*kx
-                fy = Alpha[1]*ky
-                MPalphaL[index,g,h] = www[index]*2*i*np.pi*k[index]*np.sinc(d*kx[index])*np.sinc(d*ky[index])*np.exp(i*2*np.pi*Hs[h]*(fx[index]+fy[index]))
+                fx = Alpha[0]*self.kx
+                fy = Alpha[1]*self.ky
+                MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])\
+                *np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
             
         PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
-        fx = Beta[0]*kx
-        fy = Beta[1]*ky
+        fx = Beta[0]*self.kx
+        fy = Beta[1]*self.ky
         for j in range(nH):
-            PbetaL[index,0,j] = np.exp(i*2*np.pi*( Hs[j]*(fx[index]+fy[index]) -  deltaT*self.wSpeed[j]*(wDir_x[j]*kx[index] + wDir_y[j]*ky[index]) ))
+            PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
+                  (fx[self.mskIn_]+fy[self.mskIn_]) -  \
+                  deltaT*self.wSpeed[j]*(wDir_x[j]*self.kx[self.mskIn_] + wDir_y[j]*self.ky[self.mskIn_]) ))
             
         W       = self.W
         Cphi    = self.Cphi # PSD obtained from the true atmosphere
             
-        proj = np.zeros([nK,nK,1,nH],dtype=complex)
-        for x in range(nK):
-            for y in range(nK):
-                if index[x,y] == True:
-                    proj[x,y] = PbetaL[x,y]- np.dot(W[x,y,:,:],MPalphaL[x,y,:,:])
-            
-        proj_t = np.conj(proj.transpose(0,1,3,2))            
+        # this calculation is not ok !!
+        proj = PbetaL - np.matmul(W,MPalphaL)           
+        proj_t = np.conj(proj.transpose(0,1,3,2))
         psd = np.matmul(proj,np.matmul(Cphi,proj_t))
-        psd = psd.reshape(nK,nK)
+        psd = psd[:,:,0,0]
 
-        return psd*FourierUtils.pistonFilter(self.tel.D,k)
+        return psd*self.pistonFilterIn_
         
-    def powerSpectrumDensity(self,kx,ky,iSrc=0,aoFilter='circle'):
+    def powerSpectrumDensity(self):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
         # COmputation of the extended spatial frequencies domain
-        kc          = self.kc[0] 
-        resExt      = self.fovInPixel#kx.shape[0]*self.nTimes 
-        kxExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))    
-        kyExt       = 2*self.nTimes*kc*fft.fftshift(fft.fftfreq(resExt))            
-        kxExt,kyExt = np.meshgrid(kxExt,kyExt)        
-        psd         = np.zeros((resExt,resExt),dtype=complex)
-        
-        # Defining the AO correction area              
-        index  = (abs(kxExt) <= kc) & (abs(kyExt) <= kc) 
+        psd     = np.zeros((self.fovInPixel,self.fovInPixel),dtype=complex)
         # Summing PSDs
-        noise   = self.noisePSD(kx,ky,aoFilter=aoFilter)
-        alias   = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
-        spatio  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
-        tmp     = noise + alias + spatio
+        id1 = np.floor(self.fovInPixel/2 - self.resAO/2).astype(int)
+        id2 = np.floor(self.fovInPixel/2 + self.resAO/2).astype(int)
+        psd[id1:id2,id1:id2]     = self.noisePSD() + self.aliasingPSD() + self.spatioTemporalPSD()
         
-        psd[np.where(index)] = tmp.ravel()
-        return np.real(psd + self.fittingPSD(kx,ky,aoFilter=aoFilter))
+        return np.real(psd + self.fittingPSD())
     
-    def errorBreakDown(self,iSrc=0,aoFilter='circle',verbose=True):
+    def errorBreakDown(self,iSrc=0):
         """
         """
         # Constants
@@ -801,33 +764,25 @@ class fourierModel:
         self.atm.wvl= wvl
         self.atm_mod.wvl = wvl
         rad2nm      = 1e9*wvl/2/np.pi        
-        kx          = self.kx
-        ky          = self.ky
         self.PbetaDMj = self.PbetaDM[iSrc]
-        # DEFINE THE FREQUENCY VECTORS ACROSS ALL SPATIAL FREQUENCIES
-        self.resExt = self.fovInPixel#self.resAO*self.nTimes
-        kxExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))    
-        kyExt       = 2*self.nTimes*self.kc[0]*fft.fftshift(fft.fftfreq(self.resExt))            
-        kxExt,kyExt = np.meshgrid(kxExt,kyExt)
-        
+       
         # Get PSDs
-        psdFit = self.fittingPSD(kx,ky,aoFilter=aoFilter)
-        psdAl  = self.aliasingPSD(kx,ky,aoFilter=aoFilter)
-        psdN   = self.noisePSD(kx,ky,aoFilter=aoFilter)
-        psdST  = self.spatioTemporalPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
+        psdFit = self.fittingPSD()
+        psdAl  = self.aliasingPSD()
+        psdN   = self.noisePSD()
+        psdST  = self.spatioTemporalPSD()
         
         
         # Derives wavefront error
-        self.wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,kxExt),kxExt)))
-        self.wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,kx),kx)))
-        self.wfeN   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,kx),kx))))
-        self.wfeST  = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,kx),kx))))
-        
+        self.wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdFit,self.kxExt),self.kxExt)))
+        self.wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAl,self.kx),self.kx)))
+        self.wfeN   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdN,self.kx),self.kx))))
+        self.wfeST  = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdST,self.kx),self.kx))))   
         self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
         strehl      = 100*np.exp(-(self.wfeTot/rad2nm)**2)
         
         # Print
-        if verbose == True:
+        if self.verbose == True:
             print('\n_____ ERROR BREAKDOWN SCIENTIFIC SOURCE ',iSrc+1,' _____')
             print('------------------------------------------')
             print('.Strehl-ratio at %4.2fmicron:\t%4.2f%s'%(wvl*1e6,strehl,'%'))
@@ -837,24 +792,24 @@ class fourierModel:
             print('.Noise error:\t\t\t%4.2fnm'%self.wfeN)
             print('.Spatio-temporal error:\t\t%4.2fnm'%self.wfeST)
             print('-------------------------------------------')
-            psdS   = self.servoLagPSD(kx,ky,aoFilter=aoFilter)
-            self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,kx),kx)))
+            psdS   = self.servoLagPSD()
+            self.wfeS   = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,self.kx),self.kx)))
             print('.Sole servoLag error:\t\t%4.2fnm'%self.wfeS)
             print('-------------------------------------------')            
             if self.nGs == 1:
-                psdAni = self.anisoplanatismPSD(kx,ky,iSrc=iSrc,aoFilter=aoFilter)
-                self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,kx),kx)))
+                psdAni = self.anisoplanatismPSD()
+                self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,self.kx),self.kx)))
                 print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeAni)
             else:
-                #psdTomo = self.tomographyPSD(kx,ky,aoFilter=aoFilter)
-                #self.wfeTomo = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdTomo,kx),kx)))
+                #psdTomo = self.tomographyPSD()
+                #self.wfeTomo = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdTomo,self.kx),self.kx)))
                 self.wfeTomo = np.sqrt(self.wfeST**2 - self.wfeS)
-                print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeTomo)
+                print('.Sole tomographic error:\t%4.2fnm'%self.wfeTomo)
             print('-------------------------------------------')
             
         return strehl
     
-    def getPSF(self,aoFilter='circle',verbose=False,fftphasor=True):
+    def getPSF(self,verbose=False,fftphasor=True,getErrorBreakDown=False):
         """
         """
         start0 = time.time()
@@ -864,12 +819,9 @@ class fourierModel:
             return 0,0
         
         # GET CONSTANTS
-        psInMas     = self.psInMas
         dk          = 2*self.kc[0]/self.resAO
         
-        # TELESCOPE OTF AT NYQUIST-SAMPLING
-        self.otfTel = FourierUtils.pupil2otf(self.tel.pupil,0*self.tel.pupil,2)
-        
+       
         # INITIALIZING OUTPUTS
         self.SR  = []
         self.PSF = []
@@ -881,9 +833,9 @@ class fourierModel:
              # FOURIER PHASOR
              uu =  fft.fftshift(fft.fftfreq(self.fovInPixel))  
              ux,uy = np.meshgrid(uu,uu)
-             phasor = np.exp(-complex(0,1)*np.pi*(ux + uy))
+             self.fftPhasor = np.exp(-complex(0,1)*np.pi*(ux + uy))
         else:
-             phasor = 1
+             self.fftPhasor = 1
               
         for j in range(self.nSrc):
             # UPDATE THE ATMOSPHERE WAVELENGTH
@@ -895,51 +847,59 @@ class fourierModel:
             # DEFINE THE RECONSTRUCTOR
             t1 = time.time()
             if self.nGs <2:
-                self.reconstructionFilter(self.kx,self.ky)
+                self.reconstructionFilter()
             else:
-                self.finalReconstructor(self.kx,self.ky)
+                self.finalReconstructor()
                 self.PbetaDMj = self.PbetaDM[j]
             self.trec = time.time() - t1
             
             # DEFINE THE CONTROLLER
             t1 = time.time()
-            self.controller(self.kx,self.ky)
+            self.controller()
             self.tcont = time.time() - t1
 
             # GET THE AO RESIDUAL PSD/OTF
             t1 = time.time()
-            psd   = self.powerSpectrumDensity(self.kx,self.ky,iSrc=j,aoFilter=aoFilter)        
+            psd   = self.powerSpectrumDensity()        
             self.PSD.append(psd)
-            psd   = FourierUtils.enlargeSupport(psd,2)
             
             self.otfAO = fft.fftshift(FourierUtils.psd2otf(psd,dk))
-            self.otfAO = FourierUtils.interpolateSupport(self.otfAO,2*self.tel.resolution)
             self.otfAO = self.otfAO/self.otfAO.max()
-            self.totf = time.time() - t1
+            self.totf  = time.time() - t1
+            self.otfTot= self.otfAO * self.otfTel * self.fftPhasor
             
             # GET THE WAVE FRONT ERROR BREAKDOWN
             t1 = time.time()
-            strehl = self.errorBreakDown(iSrc=j,verbose=verbose)
+            if getErrorBreakDown == True:
+                strehl = self.errorBreakDown(iSrc=j)
+            else:
+                strehl = np.sum(np.abs(self.otfTot))/self.otfTel.sum()
+                
             self.SR.append(strehl)
             self.terr = time.time() - t1
             
             # GET THE FINAL PSF
             t1 = time.time()
-            self.PSF.append(FourierUtils.otfShannon2psf(self.otfAO * self.otfTel * phasor,self.samp,self.fovInPixel))
+            psf = FourierUtils.otf2psf(self.otfTot)
+            if self.samp <1:
+                psf = FourierUtils.interpolateSupport(psf,round(self.resolution*2*self.samp))
+                      
+            self.PSF.append(psf)
             self.tpsf = time.time() - t1
 
             # GET THE FWHM
             
         self.tcalc = (time.time() - start0) 
-        print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
-        print("Required time for calculating a PSF (s)\t : {:f}".format(self.tcalc/self.nSrc))
-        print("Required time for reconstructor init (s) : {:f}".format(self.trec))
-        print("Required time for tomography init (s)\t : {:f}".format(self.ttomo))
-        print("Required time for optimization init (s)\t : {:f}".format(self.topt))
-        print("Required time for controller init (s)\t : {:f}".format(self.tcont))
-        print("Required time for otf calculation (s)\t : {:f}".format(self.totf))
-        print("Required time for error calculation (s)\t : {:f}".format(self.terr))
-        print("Required time for psf calculation (s)\t : {:f}".format(self.tpsf))
+        if self.verbose == True:
+            print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
+            print("Required time for calculating a PSF (s)\t : {:f}".format(self.tcalc/self.nSrc))
+            print("Required time for reconstructor init (s) : {:f}".format(self.trec))
+            print("Required time for tomography init (s)\t : {:f}".format(self.ttomo))
+            print("Required time for optimization init (s)\t : {:f}".format(self.topt))
+            print("Required time for controller init (s)\t : {:f}".format(self.tcont))
+            print("Required time for otf calculation (s)\t : {:f}".format(self.totf))
+            print("Required time for error calculation (s)\t : {:f}".format(self.terr))
+            print("Required time for psf calculation (s)\t : {:f}".format(self.tpsf))
 
         self.PSF = np.array(self.PSF)
         self.PSD = np.array(self.PSD)
@@ -960,15 +920,18 @@ class fourierModel:
         plt.legend(bbox_to_anchor=(1.05, 1))
            
         # PSFs
-        if self.PSF.any():
-            n = self.PSF.shape[-1]
+        if np.any(self.PSF):   
             plt.figure()
-            plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[0],self.zenithSrc[-1]))
-            P = np.concatenate((self.PSF[0,:,:],self.PSF[-1,:,:]),axis=1)
+            if self.PSF.shape[0] >1:
+                plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[0],self.zenithSrc[-1]))
+                P = np.concatenate((self.PSF[0,:,:],self.PSF[-1,:,:]),axis=1)
+            else:
+                plt.title('PSF')
+                P = self.PSF[0]
             plt.imshow(np.log10(P))
         
         # STREHL-RATIO
-        if self.SR.any():
+        if np.any(self.SR):
             plt.figure()
             plt.plot(self.zenithSrc,self.SR,'bo',markersize=10)
             plt.xlabel("Off-axis distance")
@@ -977,8 +940,7 @@ class fourierModel:
         
 def demo():
     # Instantiate the FourierModel class
-    #fao = fourierModel("parFile/parFileGeMS.py",nyquistSampling=True,calcPSF=True,verbose=False,display=True)
-    fao = fourierModel("parFile/parFileMAVIS.py",calcPSF=True,verbose=True,display=True)
+    fao = fourierModel("parFile/parFileMAVIS_Guido.py",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
         
 
     return fao
