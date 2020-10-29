@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import math
 import scipy.special as spc
 import time
+import os.path as ospath
+from configparser import ConfigParser
 
 import FourierUtils
 from telescope import telescope
@@ -51,7 +53,6 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',getErrorBreakDown=False):
     
-        start = time.time()
         # PARSING INPUTS
         self.verbose = verbose
         self.status = 0
@@ -59,6 +60,7 @@ class fourierModel:
         self.status = self.parameters(self.file)        
         
         if self.status:
+            start = time.time()
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
             kx = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             ky = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
@@ -95,14 +97,14 @@ class fourierModel:
             self.otfTel         = self.otfTel/self.otfTel.max()
         
         
-        if self.verbose:
-            self.elapsed_time_init = (time.time() - start) 
-            print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
+            if self.verbose:
+                self.elapsed_time_init = (time.time() - start) 
+                print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
           
-        if calcPSF:
-            PSF,PSD,SR,FWHM = self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown)
-            if display:
-                self.displayResults()
+            if calcPSF:
+                PSF,PSD,SR,FWHM = self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown)
+                if display:
+                    self.displayResults()
                 
 
           
@@ -120,113 +122,119 @@ class fourierModel:
     def parameters(self,file):
                     
         start = time.time() 
-        # run the .py file
-        runfile(file)
-                   
-        # Verify array dimensions       
-        #1. Atmosphere layers
-        if len(Cn2Weights) == len(Cn2Heights) == len(wSpeed) == len(wDir):
-            self.nbLayers = len(Cn2Weights)
+        
+        # verify if the file exists
+        if ospath.isfile(file) == False:
+            print('%%%%%%%% ERROR %%%%%%%%')
+            print('The .ini file does not exist\n')
+            return 0
+        
+        # open the .ini file
+        config = ConfigParser()
+        config.optionxform = str
+        config.read(file)
+        
+        #%% Telescope
+        self.D              = eval(config['telescope']['TelescopeDiameter'])
+        self.zenith_angle   = eval(config['telescope']['zenithAngle'])
+        self.obsRatio       = eval(config['telescope']['obscurationRatio'])
+        self.resolution     = eval(config['telescope']['resolution'])
+        self.path_pupil     = eval(config['telescope']['path_pupil'])
+
+        #%% Atmosphere
+        rad2arcsec          = 3600*180/np.pi 
+        rad2mas             = 1e3*rad2arcsec
+        self.wvlAtm         = eval(config['atmosphere']['atmosphereWavelength']) 
+        self.r0             = 0.976*self.wvlAtm/eval(config['atmosphere']['seeing'])*rad2arcsec
+        self.L0             = eval(config['atmosphere']['L0']) 
+        self.weights        = np.array(eval(config['atmosphere']['Cn2Weights']) )
+        self.heights        = np.array(eval(config['atmosphere']['Cn2Heights']) )
+        self.wSpeed         = np.array(eval(config['atmosphere']['wSpeed']) )
+        self.wDir           = np.array(eval(config['atmosphere']['wDir']) )
+        self.nLayersReconstructed = eval(config['atmosphere']['nLayersReconstructed'])
+        #-----  verification
+        if len(self.weights) == len(self.heights) == len(self.wSpeed) == len(self.wDir):
+            self.nbLayers = len(self.weights)
         else:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The number of atmospheric layers is not consistent in the parameters file\n')
             return 0
         
-        #2. Science sources
+        #%% PSF directions
+        self.nSrc           = len(np.array(eval(config['PSF_DIRECTIONS']['ScienceZenith'])))
+        self.wvlSrc         = np.array(eval(config['PSF_DIRECTIONS']['ScienceWavelength']))*np.ones(self.nSrc)
+        self.zenithSrc      = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceZenith'])))
+        self.azimuthSrc     = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceAzimuth'])))
+        # ----- verification
         self.src = []
-        if len(ScienceZenith) == len(ScienceAzimuth):
-            self.nSrc = len(ScienceZenith)
+        if len(self.zenithSrc) == len(self.azimuthSrc):
+            self.nSrc = len(self.zenithSrc)
         else:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The number of scientific sources is not consistent in the parameters file\n')
             return 0
         
-        #3. High-order sources
-        self.src = []
-        if len(GuideStarZenith_HO) == len(GuideStarAzimuth_HO):
-            self.nGs = len(GuideStarZenith_HO)
+        #%% Guide stars
+        self.nGs            = len(eval(config['GUIDESTARTS_HO']['GuideStarZenith_HO']))
+        self.zenithGs       = np.array(eval(config['GUIDESTARTS_HO']['GuideStarZenith_HO']))
+        self.azimuthGs      = np.array(eval(config['GUIDESTARTS_HO']['GuideStarAzimuth_HO']))
+        self.heightGs       = eval(config['GUIDESTARTS_HO']['GuideStarHeight_HO'])
+        # ----- verification
+        if len(self.zenithGs) == len(self.azimuthGs):
+            self.nGs = len(self.zenithGs)
         else:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The number of guide stars for high-order sensing is not consistent in the parameters file\n')
             return 0
-    
-    
-        # Telescope
-        self.D              = TelescopeDiameter
-        self.zenith_angle   = zenithAngle
-        self.obsRatio       = obscurationRatio
-        self.resolution     = resolution
-        self.path_pupil     = path_pupil
-
-        # True Atmosphere
-        self.wvlAtm         = atmosphereWavelength
-        self.r0             = 0.976*self.wvlAtm/seeing*206264.8
-        self.L0             = L0
-        self.weights        = np.array(Cn2Weights)
-        self.heights        = np.array(Cn2Heights)
-        self.wSpeed         = np.array(wSpeed)
-        self.wDir           = np.array(wDir)
         
-        # Scientific sources
-        self.nSrc           = len(ScienceZenith)
-        self.wvlSrc         = ScienceWavelength*np.ones(self.nSrc)
-        self.zenithSrc      = np.array(ScienceZenith)
-        self.azimuthSrc     = np.array(ScienceAzimuth)
+        #%% WFS parameters
+        self.wvlGs          = eval(config['SENSOR_HO']['SensingWavelength_HO'])*np.ones(self.nGs)
+        self.nLenslet_HO    = eval(config['SENSOR_HO']['nLenslet_HO'])
+        self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
+        self.nph_HO         = eval(config['SENSOR_HO']['nph_HO'])
+        self.pixel_Scale_HO = eval(config['SENSOR_HO']['pixel_scale_HO'])
+        self.sigmaRON_HO    = eval(config['SENSOR_HO']['sigmaRON_HO'])
+        self.Npix_per_subap_HO = eval(config['SENSOR_HO']['Npix_per_subap_HO'])
+        self.ND             = self.wvlGs[0]/self.pitchs_wfs[0]*rad2mas/self.pixel_Scale_HO #spot FWHM in pixels and without turbulence
+        varRON              = np.pi**2/3*(self.sigmaRON_HO /self.nph_HO)**2*(self.Npix_per_subap_HO**2/self.ND)**2
+        self.NT             = self.wvlGs[0]/self.r0*(self.wvlGs[0]/self.wvlAtm)**1.2 * rad2mas/self.pixel_Scale_HO
+        varShot             = np.pi**2/(2*self.nph_HO)*(self.NT/self.ND)**2
+        self.noiseVariance  = (varRON + varShot) *np.ones(self.nGs)
+        self.loopGain       = eval(config['SENSOR_HO']['loopGain_HO'])
+        self.samplingTime   = 1/eval(config['SENSOR_HO']['SensorFrameRate_HO'])
+        self.latency        = eval(config['SENSOR_HO']['loopDelaySteps_HO'])*self.samplingTime
         
-        # Sampling
-        lonD  = (1e3*180*3600/np.pi*ScienceWavelength/TelescopeDiameter)
-        if psInMas == 0:
+        #%% DM parameters
+        self.h_dm           = np.array(eval(config['DM']['DmHeights']))
+        self.pitchs_dm      = np.array(eval(config['DM']['DmPitchs']))
+        self.zenithOpt      = np.array(eval(config['DM']['OptimizationZenith']))
+        self.azimuthOpt     = np.array(eval(config['DM']['OptimizationAzimuth']))
+        self.weightOpt      = np.array(eval(config['DM']['OptimizationWeight']))
+        self.weightOpt      = self.weightOpt/self.weightOpt.sum()
+        self.condmax_tomo   = eval(config['DM']['OptimizationConditioning'])
+        self.condmax_popt   = eval(config['DM']['OptimizationConditioning'])
+        
+        #%% Sampling and field of view
+        lonD  = rad2mas*self.wvlSrc[0]/ self.D
+        self.psInMas = eval(config['PSF_DIRECTIONS']['psInMas'])
+        if self.psInMas == 0:
             self.psInMas    = lonD/2
-            #self.fovInPixel = 2*self.resolution
-        else:
-            self.psInMas    = psInMas
-            #self.fovInPixel = round(psf_FoV*1e3/self.psInMas)
+            #fovInPixel = 2*self.resolution
+       #else:
+            #fovInPixel = round(psf_FoV*1e3/self.psInMas)
 
         self.samp       = lonD/self.psInMas/2
         if self.samp >=1:
-            self.fovInPixel = round(self.resolution*self.samp*2)
+            self.fovInPixel = round(self.resolution*self.samp*2).astype('int')
         else:
-            self.fovInPixel = round(2*self.resolution/self.samp)
+            self.fovInPixel = round(2*self.resolution/self.samp).astype('int')
         
-        
-
         if self.verbose:
             print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Over-sampling:\t\t%4.2f'%(self.fovInPixel*self.psInMas/1e3,self.psInMas,self.samp))
             print('\n-------------------------------------------\n')
         
-        
-        # Guide stars
-        self.nGs            = len(GuideStarZenith_HO)
-        self.wvlGs          = SensingWavelength_HO*np.ones(self.nGs)
-        self.zenithGs       = np.array(GuideStarZenith_HO)
-        self.azimuthGs      = np.array(GuideStarAzimuth_HO)
-        self.heightGs       = GuideStarHeight_HO
-            
-        # WFS parameters
-        self.nLenslet_HO    = nLenslet_HO
-        self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
-        self.nph_HO         = nph_HO
-        ND                  = self.wvlGs[0]/self.pitchs_wfs[0]*206264.8e3/pixel_scale_HO #spot FWHM in pixels and without turbulence
-        varRON              = np.pi**2/3*(sigmaRON_HO/self.nph_HO)**2*(Npix_per_subap_HO**2/ND)**2
-        NT                  = self.wvlGs[0]/self.r0*(self.wvlGs[0]/self.wvlAtm)**1.2 * 206264.8e3/pixel_scale_HO
-        varShot             = np.pi**2/(2*self.nph_HO)*(NT/ND)**2
-        self.noiseVariance  = (varRON + varShot) *np.ones(self.nGs)
-        self.loopGain       = loopGain_HO
-        self.samplingTime   = 1/SensorFrameRate_HO
-        self.latency        = loopDelaySteps_HO*self.samplingTime
-        
-        # DM parameters
-        self.h_dm           = np.array(DmHeights)
-        self.pitchs_dm      = np.array(DmPitchs)
-        self.zenithOpt      = np.array(OptimizationZenith)
-        self.azimuthOpt     = np.array(OptimizationAzimuth)
-        self.weightOpt      = OptimizationWeight/np.sum(OptimizationWeight)
-        self.condmax_tomo   = OptimizationConditioning
-        self.condmax_popt   = OptimizationConditioning
-        
-        # Sampling
-        self.PSDstep        = self.psInMas/1e3/ScienceWavelength/206264.8
-        self.resAO          = int(1/np.min(self.pitchs_dm)/self.PSDstep)
+        self.PSDstep  = self.psInMas/1e3/self.wvlSrc[0]/rad2arcsec
+        self.resAO    = int(1/np.min(self.pitchs_dm)/self.PSDstep)
 
         #%% instantiating sub-classes
         
@@ -243,10 +251,10 @@ class fourierModel:
         self.r0_mod         = self.r0
         self.L0_mod         = self.L0
         
-        if nLayersReconstructed < len(self.weights):
-            self.weights_mod,self.heights_mod = FourierUtils.eqLayers(self.weights,self.heights,nLayersReconstructed)
-            self.wSpeed_mod = np.linspace(min(self.wSpeed),max(self.wSpeed),num=nLayersReconstructed)
-            self.wDir_mod   = np.linspace(min(self.wDir),max(self.wDir),num=nLayersReconstructed)
+        if self.nLayersReconstructed < len(self.weights):
+            self.weights_mod,self.heights_mod = FourierUtils.eqLayers(self.weights,self.heights,self.nLayersReconstructed)
+            self.wSpeed_mod = np.linspace(min(self.wSpeed),max(self.wSpeed),num=self.nLayersReconstructed)
+            self.wDir_mod   = np.linspace(min(self.wDir),max(self.wDir),num=self.nLayersReconstructed)
         else:
             self.weights_mod    = self.weights
             self.heights_mod    = self.heights
@@ -258,23 +266,22 @@ class fourierModel:
         self.atm_mod = atmosphere(self.wvlAtm,self.r0_mod*self.tel.airmass**(-3/5),self.weights_mod,self.heights_mod,self.wSpeed_mod,self.wDir_mod,self.L0_mod)
         
         # Scientific Sources
-        self.src = []
-        src = source(self.wvlSrc,self.zenithSrc,self.azimuthSrc,0,self.nSrc+1,"SCIENTIFIC STAR",verbose=True)
+        self.src = [source(0,0,0) for k in range(self.nSrc)]  
         for n in range(self.nSrc):
-            self.src.append(source(self.wvlSrc[n],self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True))
+            self.src[n] = source(self.wvlSrc[n],self.zenithSrc[n],self.azimuthSrc[n],0,n+1,"SCIENTIFIC STAR",verbose=True)
                    
         # Guide stars
-        self.gs = []
+        #self.gs = []
+        self.gs = [source(0,0,0) for k in range(self.nGs)]  
         for n in range(self.nGs):
-            self.gs.append(source(self.wvlGs[n],self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True))
+            self.gs[n] = source(self.wvlGs[n],self.zenithGs[n],self.azimuthGs[n],self.heightGs,n+1,"GUIDE STAR",verbose=True)
         if len(self.pitchs_wfs) == 1:
             self.pitchs_wfs = self.pitchs_wfs * np.ones(self.nGs)
         if len(self.noiseVariance) == 1:
             self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
         
-        
         self.tinit = (time.time() - start) 
-        print("Required time for initialization (s)\t : {:f}".format(self.tinit))
+        print("Required time for grabbing param. (s)\t : {:f}".format(self.tinit))
         
         return 1
     
@@ -345,23 +352,19 @@ class fourierModel:
         Cphi = np.zeros([nK,nK,nL,nL],dtype=complex)
         cte = (24*spc.gamma(6/5)/5)**(5/6)*(spc.gamma(11/6)**2./(2.*np.pi**(11/3)))
         if nL == 1:
-            Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
+            Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)*self.pistonFilterIn_
         else:
             for j in range(nL):
-                Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
+                Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)*self.pistonFilterIn_
         self.Cphi = Cphi
         
         # Atmospheric PSD with the modelled atmosphere
         Cphi = np.zeros([nK,nK,nL_mod,nL_mod],dtype=complex)
         if nL_mod == 1:
-            Cphi[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
+            Cphi[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)*self.pistonFilterIn_
         else:
             for j in range(nL_mod):
-                Cphi[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)\
-                *FourierUtils.pistonFilter(self.tel.D,self.kxy)
+                Cphi[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)*self.pistonFilterIn_
         self.Cphi_mod = Cphi
         
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
@@ -940,8 +943,9 @@ class fourierModel:
         
 def demo():
     # Instantiate the FourierModel class
-    fao = fourierModel("parFile/parFileMAVIS_Guido.py",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
-        
+    path = '/home/omartin/Projects/fourierPSF/parFile/'
+    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
+
 
     return fao
 
