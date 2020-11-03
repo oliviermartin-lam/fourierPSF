@@ -916,8 +916,6 @@ class fourierModel:
             self.errorBreakDown()                
         self.terr = time.time() - t1
         
-        # GET THE FWHM
-
         self.tcalc = (time.time() - start0) 
         if self.verbose == True:
             print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
@@ -965,11 +963,22 @@ class fourierModel:
             plt.ylabel("Strehl-ratio at {:.1f} nm (%)".format(self.wvlSrc[0]))
             plt.show()
         
-def demo():
+def demoMavisPSD():
     # Instantiate the FourierModel class
+    t0 = time.time()
     path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
+    fao = fourierModel(path+"mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+    PSD = fao.powerSpectrumDensity()
+    ttot = time.time() - t0
+    print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
+    return PSD
 
+def demoMavisPSF():
+    path = '/home/omartin/Projects/fourierPSF/parFile/'
+    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
     return fao
 
-fao = demo()
+def demoHarmoniPSF():
+    path = '/home/omartin/Projects/fourierPSF/parFile/'
+    fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
+    return fao
