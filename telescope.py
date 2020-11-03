@@ -59,14 +59,16 @@ class telescope:
         self.verbose   = verbose
         self.file      = file
         # PUPIL DEFINITION
-        if file != []:
+        import os.path as ospath
+        if file!=[] and ospath.isfile(file) == True:
             self.verb = True
-            if re.search(".fits",file)!=None:
+            if  re.search(".fits",file)!=None :
                 obj = fits.open(file)
-                im = obj[0].data
-                hdr = obj[0].header
+                im = obj[1].data
+                hdr = obj[1].header
                 self.pupil = im
                 obj.close()
+                
                 if hdr[3]!=resolution:
                     self.pupil = FourierUtils.interpolateSupport(self.pupil,resolution,kind='linear')
         

@@ -66,7 +66,7 @@ class source:
             self.nSrc    = len(zenith)           
        
         # Vectorizes source properties
-        test= lambda x: (len(x) != self.nSrc)
+        test= lambda x: (x.size != self.nSrc)
         if test(wvl):
             print('Select the first wavelength value out from the given inputs')
             self.wvl = self.wvl[0]*np.ones(self.nSrc)
