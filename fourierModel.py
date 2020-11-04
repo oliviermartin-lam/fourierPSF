@@ -205,10 +205,10 @@ class fourierModel:
             return 0
         
         #%% Guide stars
-        self.nGs            = len(eval(config['GUIDESTARTS_HO']['GuideStarZenith_HO']))
-        self.zenithGs       = np.array(eval(config['GUIDESTARTS_HO']['GuideStarZenith_HO']))
-        self.azimuthGs      = np.array(eval(config['GUIDESTARTS_HO']['GuideStarAzimuth_HO']))
-        self.heightGs       = eval(config['GUIDESTARTS_HO']['GuideStarHeight_HO'])
+        self.nGs            = len(eval(config['GUIDESTARS_HO']['GuideStarZenith_HO']))
+        self.zenithGs       = np.array(eval(config['GUIDESTARS_HO']['GuideStarZenith_HO']))
+        self.azimuthGs      = np.array(eval(config['GUIDESTARS_HO']['GuideStarAzimuth_HO']))
+        self.heightGs       = eval(config['GUIDESTARS_HO']['GuideStarHeight_HO'])
         # ----- verification
         if len(self.zenithGs) == len(self.azimuthGs):
             self.nGs = len(self.zenithGs)
@@ -313,7 +313,8 @@ class fourierModel:
             self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
         
         self.tinit = (time.time() - start) 
-        print("Required time for grabbing param. (s)\t : {:f}".format(self.tinit))
+        if self.verbose:
+            print("Required time for grabbing param. (s)\t : {:f}".format(self.tinit))
         
         return 1
     
