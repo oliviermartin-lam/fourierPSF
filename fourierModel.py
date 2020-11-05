@@ -16,6 +16,7 @@ Created on Thu Aug 16 15:00:44 2018
 import numpy as np
 import numpy.fft as fft
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import math
 import scipy.special as spc
 import time
@@ -28,7 +29,16 @@ from telescope import telescope
 from atmosphere import atmosphere
 from source import source
 
-    
+   
+#%% DISPLAY FEATURES
+mpl.rcParams['font.size'] = 18
+plt.rcParams.update({
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Palatino"],
+})
+ 
+#%%
 class fourierModel:
     """ Fourier class gathering the PSD calculation for PSF reconstruction. 
     """
@@ -52,7 +62,8 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
-    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',getErrorBreakDown=False):
+    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
+                 getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
     
         # PARSING INPUTS
         self.verbose = verbose
@@ -129,9 +140,10 @@ class fourierModel:
                 print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
           
             if calcPSF:
-                self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown)
+                self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown,\
+                            getPSFMetrics=getPSFMetrics)
                 if display:
-                    self.displayResults()
+                    self.displayResults(displayContour=displayContour)
                 
 
           
@@ -859,7 +871,7 @@ class fourierModel:
                 print('.Sole tomographic error:\t%4.2fnm'%self.wfeTomo[0])
             print('-------------------------------------------')
                 
-    def getPSF(self,verbose=False,fftphasor=False,getErrorBreakDown=False):
+    def getPSF(self,verbose=False,fftphasor=False,getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
         """
         """
         start0 = time.time()
@@ -910,14 +922,23 @@ class fourierModel:
                 self.PSF[:,:,:,j] = psf           
         self.tpsf = time.time() - t1
 
-            
         # GET THE WAVE FRONT ERROR BREAKDOWN
         t1 = time.time()
         if getErrorBreakDown == True:
             self.errorBreakDown()                
         self.terr = time.time() - t1
         
+        # GET METRICS
+        if getPSFMetrics == True:
+            self.FWHM = np.zeros((2,self.nSrc,self.nWvl))
+            self.EE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
+            for n in range(self.nSrc):
+                for j in range(self.nWvl):
+                    self.FWHM[:,n,j] = FourierUtils.getFWHM(self.PSF[:,:,n,j],self.psInMas,rebin=2,method='contour',nargout=2)
+                    self.EE[:,n,j]   = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF[:,:,n,j])
+        
         self.tcalc = (time.time() - start0) 
+        
         if self.verbose == True:
             print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
             print("Required time for psf calculation (s)\t : {:f}".format(self.tpsf))
@@ -929,13 +950,15 @@ class fourierModel:
             print("Required time for error calculation (s)\t : {:f}".format(self.terr))
             print("--------------------------------------------")
             print("Total - {:d} positions - {:d} wavelengths (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
-    def displayResults(self):
+    
+    def displayResults(self,eewidthInLambdaOverD=10,displayContour=False):
         """
         """
-        # GEOMETRY
         deg2rad = np.pi/180
+        rad2mas = 3600*180*1e3/np.pi
+        # GEOMETRY
         plt.figure()
-        plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation')
+        plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation (arcsec)')
         plt.polar(self.azimuthGs*deg2rad,self.zenithGs,'bs',markersize=7,label='GS position')
         plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
         plt.legend(bbox_to_anchor=(1.05, 1))
@@ -956,13 +979,75 @@ class fourierModel:
                 P = self.PSF[:,:,0,0]
             plt.imshow(np.log10(P))
         
-        # STREHL-RATIO
-        if np.any(self.SR):
-            plt.figure()
-            plt.plot(self.zenithSrc,self.SR[:,0],'bo',markersize=10)
-            plt.xlabel("Off-axis distance")
-            plt.ylabel("Strehl-ratio at {:.1f} nm (%)".format(self.wvlSrc[0]))
-            plt.show()
+           
+        if displayContour == True:
+            self.displayPsfMetricsContours(eewidthInLambdaOverD=eewidthInLambdaOverD)
+        else:
+            # STREHL-RATIO
+            if np.any(self.SR) and self.SR.size > 1:
+                plt.figure()
+                plt.plot(self.zenithSrc,self.SR[:,0],'bo',markersize=10)
+                plt.xlabel("Off-axis distance")
+                plt.ylabel("Strehl-ratio at {:.1f} nm (%)".format(self.wvlSrc[0]*1e9))
+                plt.show()
+  
+            # FWHM
+            if np.any(self.FWHM) and self.FWHM.size > 1:
+                plt.figure()
+                plt.plot(self.zenithSrc,np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),'bo',markersize=10)
+                plt.xlabel("Off-axis distance")
+                plt.ylabel("Geometrical-mean FWHM at {:.1f} nm (%)".format(self.wvlSrc[0]*1e9))
+                plt.show()
+         
+            # Ensquared energy
+            if np.any(self.EE):
+                nn          = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
+                trueWidth   = nn*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
+                plt.figure()
+                plt.plot(self.zenithSrc,self.EE[nn,:,0],'bo',markersize=10)
+                plt.xlabel("Off-axis distance")
+                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (%)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.show()
+
+    def displayPsfMetricsContours(self,eewidthInLambdaOverD=10,nIntervals=8):
+
+        rad2mas = 3600*180*1e3/np.pi
+        # Polar to cartesian
+        x = self.zenithSrc * np.cos(np.pi/180*self.azimuthSrc)
+        y = self.zenithSrc * np.sin(np.pi/180*self.azimuthSrc)
+    
+        nn = int(np.sqrt(self.SR.size))
+        X = np.reshape(x,(nn,nn))    
+        Y = np.reshape(y,(nn,nn))
+        
+        # Strehl-ratio
+        SR = np.reshape(self.SR[:,0],(nn,nn))
+        plt.figure()
+        contours = plt.contour(X, Y, SR, nIntervals, colors='black')
+        plt.clabel(contours, inline=True,fmt='%1.1f')
+        plt.contourf(X,Y,SR)
+        plt.title("Strehl-ratio at {:.1f} nm (\%)".format(self.wvlSrc[0]*1e9))
+        plt.colorbar()
+        
+        # FWHM
+        FWHM = np.reshape(np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),(nn,nn))
+        plt.figure()
+        contours = plt.contour(X, Y, FWHM, nIntervals, colors='black')
+        plt.clabel(contours, inline=True,fmt='%1.1f')
+        plt.contourf(X,Y,FWHM)
+        plt.title("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
+        plt.colorbar()
+        
+        # EE
+        nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
+        trueWidth   = nn2*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
+        EE = np.reshape(self.EE[nn2,:,0],(nn,nn))
+        plt.figure()
+        contours = plt.contour(X, Y, EE, nIntervals, colors='black')
+        plt.clabel(contours, inline=True,fmt='%1.1f')
+        plt.contourf(X,Y,EE)
+        plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (\%)".format(trueWidth,self.wvlSrc[0]*1e9))
+        plt.colorbar()
         
 def demoMavisPSD():
     # Instantiate the FourierModel class
@@ -976,10 +1061,11 @@ def demoMavisPSD():
 
 def demoMavisPSF():
     path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
+    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
     return fao
 
 def demoHarmoniPSF():
     path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True)
+    fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+                       getErrorBreakDown=True,getPSFMetrics=True,displayContour=True)
     return fao
