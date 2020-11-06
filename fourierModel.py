@@ -1064,13 +1064,13 @@ class fourierModel:
             # EE
             if np.any(self.EE) and self.EE.shape[1] > 1:
                 nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
-                trueWidth   = nn2*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
+                trueWidth   = (2*nn2+1)*self.psInMas
                 EE          = np.reshape(self.EE[nn2,:,0],(nn,nn))
                 plt.figure()
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas-diameter Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
