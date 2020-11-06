@@ -135,6 +135,14 @@ class fourierModel:
             self.controller()
             self.tcont = time.time() - t1
             
+            
+            # INIT OUTPUTS
+            self.PSF = []
+            self.PSD = []
+            self.SR  = []
+            self.FWHM= []
+            self.EE  = []
+            
             if self.verbose:
                 self.elapsed_time_init = (time.time() - start) 
                 print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
@@ -239,10 +247,11 @@ class fourierModel:
         self.nph_HO         = eval(config['SENSOR_HO']['nph_HO'])
         self.pixel_Scale_HO = eval(config['SENSOR_HO']['pixel_scale_HO'])
         self.sigmaRON_HO    = eval(config['SENSOR_HO']['sigmaRON_HO'])
-        self.Npix_per_subap_HO = eval(config['SENSOR_HO']['Npix_per_subap_HO'])
+        #self.Npix_per_subap_HO = eval(config['SENSOR_HO']['Npix_per_subap_HO'])
         
         # Calculate the noise variance
         self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
+        self.Npix_per_subap_HO = int(self.resolution/self.nLenslet_HO)
         # Note : so far, the WFSs have all the same subaperture size
         self.ND             = self.wvlGs/self.pitchs_wfs*rad2mas/self.pixel_Scale_HO #spot FWHM in pixels and without turbulence
         varRON              = np.pi**2/3*(self.sigmaRON_HO /self.nph_HO)**2*(self.Npix_per_subap_HO**2/self.ND)**2
@@ -336,16 +345,16 @@ class fourierModel:
         """          
        
         # reconstructor derivation
-        i    = complex(0,1)
-        d    = self.pitchs_dm[0]   
-        Sx   = 2*i*np.pi*self.kx*d
-        Sy   = 2*i*np.pi*self.ky*d                        
-        Av   = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
-        self.SxAv = Sx*Av
-        self.SyAv = Sy*Av
-        gPSD = abs(self.SxAv)**2 + abs(self.SyAv)**2 + MV*self.Wn/self.Wphi
-        self.Rx = np.conjugate(self.SxAv)/gPSD
-        self.Ry = np.conjugate(self.SyAv)/gPSD
+        i           = complex(0,1)
+        d           = self.pitchs_dm[0]   
+        Sx          = 2*i*np.pi*self.kx*d
+        Sy          = 2*i*np.pi*self.ky*d                        
+        Av          = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
+        self.SxAv   = Sx*Av
+        self.SyAv   = Sy*Av
+        gPSD        = abs(self.SxAv)**2 + abs(self.SyAv)**2 + MV*self.Wn/self.Wphi
+        self.Rx     = np.conjugate(self.SxAv)/gPSD
+        self.Ry     = np.conjugate(self.SyAv)/gPSD
                 
         # Manage NAN value if any   
         self.Rx[np.isnan(self.Rx)] = 0
@@ -358,12 +367,12 @@ class fourierModel:
 
     def tomographicReconstructor(self):
         
-        tstart = time.time()
+        tstart  = time.time()
         nK      = self.resAO
         nL      = len(self.heights)
         nL_mod  = len(self.heights_mod)
         nGs     = self.nGs
-        Alpha = np.zeros([2,nGs])
+        Alpha   = np.zeros([2,nGs])
         for j in range(nGs):
             Alpha[0,j] = self.gs[j].direction[0]
             Alpha[1,j] = self.gs[j].direction[1]
@@ -487,13 +496,13 @@ class fourierModel:
             fy = self.src[s].direction[1]*self.ky
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm): #loop on DMs
-                index   = self.kxy <= self.kc[j]
-                PbetaDM[index,0,j] = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
+                index               = self.kxy <= self.kc[j]
+                PbetaDM[index,0,j]  = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
         
 #%% CONTROLLER DEFINITION
-    def  controller(self,nTh=10,nF=500):
+    def  controller(self,nTh=1,nF=500):
         """
         """
         
@@ -601,12 +610,12 @@ class fourierModel:
             for mi in np.arange(-self.nTimes,self.nTimes+1):
                 for ni in np.arange(-self.nTimes,self.nTimes+1):
                     if (mi!=0) | (ni!=0):
-                        km = self.kx - mi/d
-                        kn = self.ky - ni/d
-                        PR = FourierUtils.pistonFilter(self.tel.D,np.hypot(km,kn),fm=mi/d,fn=ni/d)
+                        km   = self.kx - mi/d
+                        kn   = self.ky - ni/d
+                        PR   = FourierUtils.pistonFilter(self.tel.D,np.hypot(km,kn),fm=mi/d,fn=ni/d)
                         W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
-                        Q = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
-                        avr = 0
+                        Q    = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
+                        avr  = 0
                         
                         for l in np.arange(0,self.atm.nL):
                             avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
@@ -615,7 +624,7 @@ class fourierModel:
                         tmp = tmp + PR*W_mn * abs(Q*avr)**2
                
             tmp[np.isnan(tmp)] = 0        
-            psd[self.mskIn_]         = tmp[self.mskIn_]
+            psd[self.mskIn_]   = tmp[self.mskIn_]
         
         return psd*self.atm.r0**(-5/3)*0.0229 
             
@@ -949,7 +958,7 @@ class fourierModel:
             print("Required time for controller init (s)\t : {:f}".format(self.tcont))
             print("Required time for error calculation (s)\t : {:f}".format(self.terr))
             print("--------------------------------------------")
-            print("Total - {:d} positions - {:d} wavelengths (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
+            print("Total - {:d} positions - {:d} $\lambda$ (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
     
     def displayResults(self,eewidthInLambdaOverD=10,displayContour=False):
         """
@@ -965,22 +974,24 @@ class fourierModel:
            
         # PSFs
         if np.any(self.PSF):   
+            nmin = self.zenithSrc.argmin()
+            nmax = self.zenithSrc.argmax()
             plt.figure()
-            if self.PSF.shape[2] >1 and self.PSF.shape[3] == 1:
-                plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[0],self.zenithSrc[-1]))
-                P = np.concatenate((self.PSF[:,:,0,0],self.PSF[:,:,-1,0]),axis=1)
+            if self.PSF.shape[2] >1 and self.PSF.shape[3] == 1:             
+                plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[nmin],self.zenithSrc[nmax]))
+                P = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
             elif self.PSF.shape[2] >1 and self.PSF.shape[3] >1:
                 plt.title("PSFs at {:.0f} and {:.0f} arcsec from center - Top: {:.0f}nm - Bottom:{:.0f} nm".format(self.zenithSrc[0],self.zenithSrc[-1],1e9*self.wvlSrc[0],1e9*self.wvlSrc[-1]))
-                P1 = np.concatenate((self.PSF[:,:,0,0],self.PSF[:,:,-1,0]),axis=1)
-                P2 = np.concatenate((self.PSF[:,:,0,-1],self.PSF[:,:,-1,-1]),axis=1)
+                P1 = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
+                P2 = np.concatenate((self.PSF[:,:,nmin,-1],self.PSF[:,:,nmax,-1]),axis=1)
                 P  = np.concatenate((P1,P2),axis=0)
             else:
                 plt.title('PSF')
-                P = self.PSF[:,:,0,0]
+                P = self.PSF[:,:,nmin,0]
             plt.imshow(np.log10(P))
         
            
-        if displayContour == True:
+        if displayContour == True and np.any(self.SR) and self.SR.size > 1:
             self.displayPsfMetricsContours(eewidthInLambdaOverD=eewidthInLambdaOverD)
         else:
             # STREHL-RATIO
@@ -1009,46 +1020,53 @@ class fourierModel:
                 plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (%)".format(trueWidth,self.wvlSrc[0]*1e9))
                 plt.show()
 
-    def displayPsfMetricsContours(self,eewidthInLambdaOverD=10,nIntervals=8):
+    def displayPsfMetricsContours(self,eewidthInLambdaOverD=10):
 
+        
         rad2mas = 3600*180*1e3/np.pi
         # Polar to cartesian
         x = self.zenithSrc * np.cos(np.pi/180*self.azimuthSrc)
         y = self.zenithSrc * np.sin(np.pi/180*self.azimuthSrc)
     
-        nn = int(np.sqrt(self.SR.size))
-        X = np.reshape(x,(nn,nn))    
-        Y = np.reshape(y,(nn,nn))
+
+        nn          = int(np.sqrt(self.SR.shape[0]))
+        if nn**2 == self.SR.shape[0]:
+            nIntervals  = nn
+            X           = np.reshape(x,(nn,nn))    
+            Y           = np.reshape(y,(nn,nn))
         
-        # Strehl-ratio
-        SR = np.reshape(self.SR[:,0],(nn,nn))
-        plt.figure()
-        contours = plt.contour(X, Y, SR, nIntervals, colors='black')
-        plt.clabel(contours, inline=True,fmt='%1.1f')
-        plt.contourf(X,Y,SR)
-        plt.title("Strehl-ratio at {:.1f} nm (\%)".format(self.wvlSrc[0]*1e9))
-        plt.colorbar()
+            # Strehl-ratio
+            SR = np.reshape(self.SR[:,0],(nn,nn))
+            plt.figure()
+            contours = plt.contour(X, Y, SR, nIntervals, colors='black')
+            plt.clabel(contours, inline=True,fmt='%1.1f')
+            plt.contourf(X,Y,SR)
+            plt.title("Strehl-ratio at {:.1f} nm (\%)".format(self.wvlSrc[0]*1e9))
+            plt.colorbar()
         
-        # FWHM
-        FWHM = np.reshape(np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),(nn,nn))
-        plt.figure()
-        contours = plt.contour(X, Y, FWHM, nIntervals, colors='black')
-        plt.clabel(contours, inline=True,fmt='%1.1f')
-        plt.contourf(X,Y,FWHM)
-        plt.title("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
-        plt.colorbar()
+            # FWHM
+            if np.any(self.FWHM) and self.FWHM.size > 1:
+                FWHM = np.reshape(np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),(nn,nn))
+                plt.figure()
+                contours = plt.contour(X, Y, FWHM, nIntervals, colors='black')
+                plt.clabel(contours, inline=True,fmt='%1.1f')
+                plt.contourf(X,Y,FWHM)
+                plt.title("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
+                plt.colorbar()
         
-        # EE
-        nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
-        trueWidth   = nn2*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
-        EE = np.reshape(self.EE[nn2,:,0],(nn,nn))
-        plt.figure()
-        contours = plt.contour(X, Y, EE, nIntervals, colors='black')
-        plt.clabel(contours, inline=True,fmt='%1.1f')
-        plt.contourf(X,Y,EE)
-        plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (\%)".format(trueWidth,self.wvlSrc[0]*1e9))
-        plt.colorbar()
-        
+            # EE
+            if np.any(self.EE) and EE.shape[1] > 1:
+                nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
+                trueWidth   = nn2*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
+                EE          = np.reshape(self.EE[nn2,:,0],(nn,nn))
+                plt.figure()
+                contours = plt.contour(X, Y, EE, nIntervals, colors='black')
+                plt.clabel(contours, inline=True,fmt='%1.1f')
+                plt.contourf(X,Y,EE)
+                plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (\%)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.colorbar()
+        else:
+            print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
 def demoMavisPSD():
     # Instantiate the FourierModel class
     t0 = time.time()
@@ -1067,5 +1085,5 @@ def demoMavisPSF():
 def demoHarmoniPSF():
     path = '/home/omartin/Projects/fourierPSF/parFile/'
     fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=True,getPSFMetrics=True,displayContour=True)
+                       getErrorBreakDown=False,getPSFMetrics=False,displayContour=True)
     return fao
