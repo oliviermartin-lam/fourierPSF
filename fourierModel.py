@@ -23,6 +23,7 @@ import time
 import os.path as ospath
 from astropy.io import fits
 from configparser import ConfigParser
+from distutils.spawn import find_executable
 
 import FourierUtils
 from telescope import telescope
@@ -32,8 +33,14 @@ from source import source
    
 #%% DISPLAY FEATURES
 mpl.rcParams['font.size'] = 18
+
+if find_executable('tex'): 
+    usetex = True
+else:
+    usetex = False
+
 plt.rcParams.update({
-    "text.usetex": True,
+    "text.usetex": usetex,
     "font.family": "serif",
     "font.serif": ["Palatino"],
 })
@@ -1055,7 +1062,7 @@ class fourierModel:
                 plt.colorbar()
         
             # EE
-            if np.any(self.EE) and EE.shape[1] > 1:
+            if np.any(self.EE) and self.EE.shape[1] > 1:
                 nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
                 trueWidth   = nn2*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
                 EE          = np.reshape(self.EE[nn2,:,0],(nn,nn))
