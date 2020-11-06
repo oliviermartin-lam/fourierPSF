@@ -22,6 +22,7 @@ import scipy.special as spc
 import time
 import os.path as ospath
 import os
+import sys
 from astropy.io import fits
 from configparser import ConfigParser
 from distutils.spawn import find_executable
@@ -70,27 +71,16 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
-    def __init__(self,path,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
+    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
     
         # PARSING INPUTS
         self.verbose = verbose
         self.status = 0
         self.file   = file  
-        self.path   = path
-        
-        # CHECK THE PATH
-        if path:
-            if not ospath.isdir(path):
-                print('%%%%%%%% ERROR %%%%%%%%')
-                print('The path does not exist\n')
-                return
-        else:
-            path = os.getcwd()       
-        
         
         # GRAB PARAMETERS
-        self.status = self.parameters(self.path,self.file)        
+        self.status = self.parameters(self.file)        
         
         if self.status:
             start = time.time()
@@ -187,12 +177,11 @@ class fourierModel:
         
         return s
     
-    def parameters(self,path,file):
+    def parameters(self,file):
                     
         start = time.time() 
     
         # verify if the file exists
-        file = path + '/parFile/' + file
         if ospath.isfile(file) == False:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The .ini file does not exist\n')
@@ -208,8 +197,8 @@ class fourierModel:
         self.zenith_angle   = eval(config['telescope']['zenithAngle'])
         self.obsRatio       = eval(config['telescope']['obscurationRatio'])
         self.resolution     = eval(config['telescope']['resolution'])
-        self.path_pupil     = path +'/calib/'+ eval(config['telescope']['path_pupil'])
-        self.path_static    = path +'/calib/'+ eval(config['telescope']['path_static'])
+        self.path_pupil     = eval(config['telescope']['path_pupil'])
+        self.path_static    = eval(config['telescope']['path_static'])
         
         #%% Atmosphere
         rad2arcsec          = 3600*180/np.pi 
@@ -1096,17 +1085,29 @@ class fourierModel:
 def demoMavisPSD():
     # Instantiate the FourierModel class
     t0 = time.time()
-    fao = fourierModel(os.getcwd(),"mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
     PSD = fao.powerSpectrumDensity()
     ttot = time.time() - t0
     print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
     return PSD
 
 def demoMavisPSF():
-    fao = fourierModel(os.getcwd(),"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
     return fao
 
 def demoHarmoniPSF():
-    fao = fourierModel(os.getcwd(),"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
+    return fao
+    
     return fao
