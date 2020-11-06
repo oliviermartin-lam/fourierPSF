@@ -21,6 +21,7 @@ import math
 import scipy.special as spc
 import time
 import os.path as ospath
+import os
 from astropy.io import fits
 from configparser import ConfigParser
 from distutils.spawn import find_executable
@@ -69,14 +70,27 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
-    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
+    def __init__(self,path,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
     
         # PARSING INPUTS
         self.verbose = verbose
         self.status = 0
         self.file   = file  
-        self.status = self.parameters(self.file)        
+        self.path   = path
+        
+        # CHECK THE PATH
+        if path:
+            if not ospath.isdir(path):
+                print('%%%%%%%% ERROR %%%%%%%%')
+                print('The path does not exist\n')
+                return
+        else:
+            path = os.getcwd()       
+        
+        
+        # GRAB PARAMETERS
+        self.status = self.parameters(self.path,self.file)        
         
         if self.status:
             start = time.time()
@@ -173,11 +187,12 @@ class fourierModel:
         
         return s
     
-    def parameters(self,file):
+    def parameters(self,path,file):
                     
         start = time.time() 
-        
+    
         # verify if the file exists
+        file = path + '/parFile/' + file
         if ospath.isfile(file) == False:
             print('%%%%%%%% ERROR %%%%%%%%')
             print('The .ini file does not exist\n')
@@ -193,8 +208,8 @@ class fourierModel:
         self.zenith_angle   = eval(config['telescope']['zenithAngle'])
         self.obsRatio       = eval(config['telescope']['obscurationRatio'])
         self.resolution     = eval(config['telescope']['resolution'])
-        self.path_pupil     = eval(config['telescope']['path_pupil'])
-        self.path_static    = eval(config['telescope']['path_static'])
+        self.path_pupil     = path +'/calib/'+ eval(config['telescope']['path_pupil'])
+        self.path_static    = path +'/calib/'+ eval(config['telescope']['path_static'])
         
         #%% Atmosphere
         rad2arcsec          = 3600*180/np.pi 
@@ -967,11 +982,10 @@ class fourierModel:
             print("--------------------------------------------")
             print("Total - {:d} positions - {:d} wvl (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
     
-    def displayResults(self,eewidthInLambdaOverD=10,displayContour=False):
+    def displayResults(self,eewidthIDiamInMas=120,displayContour=False):
         """
         """
         deg2rad = np.pi/180
-        rad2mas = 3600*180*1e3/np.pi
         # GEOMETRY
         plt.figure()
         plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation (arcsec)')
@@ -999,7 +1013,7 @@ class fourierModel:
         
            
         if displayContour == True and np.any(self.SR) and self.SR.size > 1:
-            self.displayPsfMetricsContours(eewidthInLambdaOverD=eewidthInLambdaOverD)
+            self.displayPsfMetricsContours(eewidthIDiamInMas=eewidthIDiamInMas)
         else:
             # STREHL-RATIO
             if np.any(self.SR) and self.SR.size > 1:
@@ -1019,18 +1033,20 @@ class fourierModel:
          
             # Ensquared energy
             if np.any(self.EE):
-                nn          = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
-                trueWidth   = nn*self.psInMas*self.D/self.wvlSrc[0]/rad2mas
+                nntrue      = eewidthIDiamInMas/self.psInMas
+                nn2         = int(nntrue)
+                EEmin       = self.EE[nn2,:,0]
+                EEmax       = self.EE[nn2+1,:,0]
+                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
                 plt.figure()
-                plt.plot(self.zenithSrc,self.EE[nn,:,0],'bo',markersize=10)
+                plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
                 plt.show()
 
-    def displayPsfMetricsContours(self,eewidthInLambdaOverD=10):
+    def displayPsfMetricsContours(self,eewidthIDiamInMas=120):
 
         
-        rad2mas = 3600*180*1e3/np.pi
         # Polar to cartesian
         x = self.zenithSrc * np.cos(np.pi/180*self.azimuthSrc)
         y = self.zenithSrc * np.sin(np.pi/180*self.azimuthSrc)
@@ -1063,34 +1079,34 @@ class fourierModel:
         
             # EE
             if np.any(self.EE) and self.EE.shape[1] > 1:
-                nn2         = int(rad2mas*eewidthInLambdaOverD*self.wvlSrc[0]/self.D/self.psInMas)
-                trueWidth   = (2*nn2+1)*self.psInMas
-                EE          = np.reshape(self.EE[nn2,:,0],(nn,nn))
+                nntrue      = eewidthIDiamInMas/self.psInMas
+                nn2         = int(nntrue)
+                EEmin       = self.EE[nn2,:,0]
+                EEmax       = self.EE[nn2+1,:,0]
+                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
+                EE          = np.reshape(EEtrue,(nn,nn))
                 plt.figure()
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas-diameter Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas-diameter Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
 def demoMavisPSD():
     # Instantiate the FourierModel class
     t0 = time.time()
-    path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+    fao = fourierModel(os.getcwd(),"mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
     PSD = fao.powerSpectrumDensity()
     ttot = time.time() - t0
     print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
     return PSD
 
 def demoMavisPSF():
-    path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
+    fao = fourierModel(os.getcwd(),"mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
     return fao
 
 def demoHarmoniPSF():
-    path = '/home/omartin/Projects/fourierPSF/parFile/'
-    fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+    fao = fourierModel(os.getcwd(),"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
                        getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)
     return fao
