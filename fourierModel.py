@@ -965,7 +965,7 @@ class fourierModel:
             print("Required time for controller init (s)\t : {:f}".format(self.tcont))
             print("Required time for error calculation (s)\t : {:f}".format(self.terr))
             print("--------------------------------------------")
-            print("Total - {:d} positions - {:d} $\lambda$ (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
+            print("Total - {:d} positions - {:d} wvl (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
     
     def displayResults(self,eewidthInLambdaOverD=10,displayContour=False):
         """
@@ -1006,7 +1006,7 @@ class fourierModel:
                 plt.figure()
                 plt.plot(self.zenithSrc,self.SR[:,0],'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("Strehl-ratio at {:.1f} nm (%)".format(self.wvlSrc[0]*1e9))
+                plt.ylabel("Strehl-ratio at {:.1f} nm (percents)".format(self.wvlSrc[0]*1e9))
                 plt.show()
   
             # FWHM
@@ -1014,7 +1014,7 @@ class fourierModel:
                 plt.figure()
                 plt.plot(self.zenithSrc,np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("Geometrical-mean FWHM at {:.1f} nm (%)".format(self.wvlSrc[0]*1e9))
+                plt.ylabel("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
                 plt.show()
          
             # Ensquared energy
@@ -1024,7 +1024,7 @@ class fourierModel:
                 plt.figure()
                 plt.plot(self.zenithSrc,self.EE[nn,:,0],'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (%)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
                 plt.show()
 
     def displayPsfMetricsContours(self,eewidthInLambdaOverD=10):
@@ -1048,7 +1048,7 @@ class fourierModel:
             contours = plt.contour(X, Y, SR, nIntervals, colors='black')
             plt.clabel(contours, inline=True,fmt='%1.1f')
             plt.contourf(X,Y,SR)
-            plt.title("Strehl-ratio at {:.1f} nm (\%)".format(self.wvlSrc[0]*1e9))
+            plt.title("Strehl-ratio at {:.1f} nm (percents)".format(self.wvlSrc[0]*1e9))
             plt.colorbar()
         
             # FWHM
@@ -1070,7 +1070,7 @@ class fourierModel:
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (\%)".format(trueWidth,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas Ensquared energy at {:.1f} nm (percents)".format(trueWidth,self.wvlSrc[0]*1e9))
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
@@ -1092,5 +1092,5 @@ def demoMavisPSF():
 def demoHarmoniPSF():
     path = '/home/omartin/Projects/fourierPSF/parFile/'
     fao = fourierModel(path+"harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getPSFMetrics=False,displayContour=True)
+                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)
     return fao
