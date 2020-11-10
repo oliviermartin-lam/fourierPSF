@@ -14,15 +14,18 @@ Created on Thu Aug 16 15:00:44 2018
 @author: omartin
 """
 import numpy as np
+import matplotlib as mpl
+
 import numpy.fft as fft
 import matplotlib.pyplot as plt
-import matplotlib as mpl
-import math
 import scipy.special as spc
-import time
 import os.path as ospath
+
+import math
+import time
 import os
 import sys
+
 from astropy.io import fits
 from configparser import ConfigParser
 from distutils.spawn import find_executable
@@ -173,7 +176,7 @@ class fourierModel:
         else:
             s = s + "not instantiated"
         
-        self.displayResults()
+        #self.displayResults()
         
         return s
     
@@ -387,7 +390,7 @@ class fourierModel:
         for j in range(nGs):
             Alpha[0,j] = self.gs[j].direction[0]
             Alpha[1,j] = self.gs[j].direction[1]
-            
+        
         # WFS operator matrix
         i    = complex(0,1)
         d    = self.pitchs_wfs   #sub-aperture size      
@@ -395,9 +398,9 @@ class fourierModel:
         for j in np.arange(0,nGs):
             M[:,:,j,j] = 2*i*np.pi*self.kxy*np.sinc(d[j]*self.kx)*np.sinc(d[j]*self.ky)
         self.M = M
-        # Projection matrix
-        P    = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)
         
+        # Projection matrix
+        P    = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)    
         for n in range(nL_mod):
             for j in range(nGs):
                 fx = self.kx*Alpha[0,j]
@@ -429,20 +432,32 @@ class fourierModel:
         else:
             for j in range(nL_mod):
                 self.Cphi_mod[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)*self.pistonFilterIn_
-        
+                
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
-        inv     = np.zeros(to_inv.shape,dtype=complex)
         
-        u,s,vh      = np.linalg.svd(to_inv)
-        for x in range(to_inv.shape[0]):
-            for y in range(to_inv.shape[1]):
-                slim         = np.amax(s[x,y])/self.condmax_tomo
-                rank         = np.sum(s[x,y] > slim)
-                uu           = u[x, y, :, :rank]
-                uu          /= s[x,y, :rank]
-                inv[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
-        Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)
+        #import pdb
+        #pdb.set_trace()
         
+        ## TO BE OPTIMIZED ######
+        inv = np.linalg.pinv(to_inv,rcond=1/self.condmax_tomo)
+        #inv     = np.zeros(to_inv.shape,dtype=complex)
+        #uu,ss,vv= np.linalg.svd(to_inv)
+        #slim    = np.amax(ss,axis=2)/self.condmax_tomo
+        #slim    = np.repeat(slim[:,:,np.newaxis], self.nGs, axis=2) 
+        #rank    = np.sum(ss > slim,axis=2)
+
+        
+        #for x in range(to_inv.shape[0]):
+        #    for y in range(to_inv.shape[1]):
+                #slim         = np.amax(ss[x,y])/self.condmax_tomo
+                #rank         = np.sum(ss[x,y] > slim)
+                #uu2           = uu[x, y, :, :rank]
+                #uu2          /= ss[x,y, :rank]
+                #inv[x,y,:,:] = np.transpose(np.conj(np.dot(uu2, np.asarray(vv[x,y,:rank]) ) ) )
+        ############################
+       
+        
+        Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)        
         self.ttomo = time.time() - tstart
         return Wtomo
  
@@ -476,16 +491,20 @@ class fourierModel:
             mat1   += np.matmul(Pdm_t,Pl)*self.weightOpt[d_o]
             to_inv += np.matmul(Pdm_t,Pdm)*self.weightOpt[d_o]
             
-        mat2 = np.zeros(to_inv.shape,dtype=complex)
         
-        u,s,vh      = np.linalg.svd(to_inv)
-        for x in range(to_inv.shape[0]):
-            for y in range(to_inv.shape[1]):
-                slim        = np.amax(s[x,y])/self.condmax_tomo
-                rank        = np.sum(s[x,y] > slim)
-                uu          = u[x, y, :, :rank]
-                uu          /= s[x,y, :rank]
-                mat2[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
+        
+        ## TO BE OPTIMIZED ######
+        mat2 = np.linalg.pinv(to_inv,rcond=1/self.condmax_popt)
+        #mat2 = np.zeros(to_inv.shape,dtype=complex)
+        #u,s,vh      = np.linalg.svd(to_inv)
+        #for x in range(to_inv.shape[0]):
+        #    for y in range(to_inv.shape[1]):
+        #        slim        = np.amax(s[x,y])/self.condmax_tomo
+        #        rank        = np.sum(s[x,y] > slim)
+        #        uu          = u[x, y, :, :rank]
+        #        uu          /= s[x,y, :rank]
+        #        mat2[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
+        ############################
         
         Popt = np.matmul(mat2,mat1)
         
@@ -1086,9 +1105,9 @@ def demoMavisPSD():
     # Instantiate the FourierModel class
     t0 = time.time()
     if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
     else:
-        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=False,verbose=False,display=False,getErrorBreakDown=False)
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
     PSD = fao.powerSpectrumDensity()
     ttot = time.time() - t0
     print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
@@ -1096,9 +1115,9 @@ def demoMavisPSD():
 
 def demoMavisPSF():
     if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False,getPSFMetrics=False)
     else:
-        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=True,getPSFMetrics=True)
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False,getPSFMetrics=False)
     return fao
 
 def demoHarmoniPSF():
