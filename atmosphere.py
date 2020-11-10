@@ -105,7 +105,7 @@ class atmosphere:
             wDir    = wDir*np.ones(self.nL)
             
         # DEFINE LAYERS             
-        if self.nL>1:
+        if self.nL>0:
             self.layer = np.repeat(Attribute(),self.nL)
             for l in np.arange(0,self.nL):       
                 tmp  = (weights[l]*r0**(-5/3))**(-3/5)

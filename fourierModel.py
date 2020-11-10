@@ -386,77 +386,38 @@ class fourierModel:
         nL      = len(self.heights)
         nL_mod  = len(self.heights_mod)
         nGs     = self.nGs
-        Alpha   = np.zeros([2,nGs])
+        i       = complex(0,1)
+        d       = self.pitchs_wfs   #sub-aperture size      
+        
+         # WFS operator and projection matrices
+        M     = np.zeros([nK,nK,nGs,nGs],dtype=complex)
+        P     = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)         
         for j in range(nGs):
-            Alpha[0,j] = self.gs[j].direction[0]
-            Alpha[1,j] = self.gs[j].direction[1]
-        
-        # WFS operator matrix
-        i    = complex(0,1)
-        d    = self.pitchs_wfs   #sub-aperture size      
-        M    = np.zeros([nK,nK,nGs,nGs],dtype=complex)
-        for j in np.arange(0,nGs):
             M[:,:,j,j] = 2*i*np.pi*self.kxy*np.sinc(d[j]*self.kx)*np.sinc(d[j]*self.ky)
+            for n in range(nL_mod):
+                P[:,:,j,n] = np.exp(i*2*np.pi*self.heights_mod[n]*(self.kx*self.gs[j].direction[0] + self.ky*self.gs[j].direction[1]))
         self.M = M
-        
-        # Projection matrix
-        P    = np.zeros([nK,nK,nGs,nL_mod],dtype=complex)    
-        for n in range(nL_mod):
-            for j in range(nGs):
-                fx = self.kx*Alpha[0,j]
-                fy = self.ky*Alpha[1,j]
-                P[:,:,j,n] = np.exp(i*2*np.pi*self.heights_mod[n]*(fx + fy))
-                
-        MP = np.matmul(M,P)
+        MP = np.matmul(self.M,P)
         MP_t = np.conj(MP.transpose(0,1,3,2))
         
         # Noise covariance matrix
-        Cb = np.zeros([nK,nK,nGs,nGs],dtype=complex)
-        for j in range(nGs):
-            Cb[:,:,j,j]  = self.noiseVariance[j]
-        self.Cb = Cb
+        self.Cb = np.ones((nK,nK,nGs,nGs))*np.diag(self.noiseVariance)
         
         # Atmospheric PSD with the true atmosphere
         self.Cphi = np.zeros([nK,nK,nL,nL],dtype=complex)
         cte = (24*spc.gamma(6/5)/5)**(5/6)*(spc.gamma(11/6)**2./(2.*np.pi**(11/3)))
-        if nL == 1:
-            self.Cphi[:,:,0,0] = self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)*self.pistonFilterIn_
-        else:
-            for j in range(nL):
-                self.Cphi[:,:,j,j] = self.atm.layer[j].weight * self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)*self.pistonFilterIn_
+        kernel = self.atm.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm.L0**2)**(-11/6)*self.pistonFilterIn_
+        self.Cphi = kernel.repeat(nL**2,axis=1).reshape((nK,nK,nL,nL))*np.diag(self.weights)
         
         # Atmospheric PSD with the modelled atmosphere
-        self.Cphi_mod = np.zeros([nK,nK,nL_mod,nL_mod],dtype=complex)
-        if nL_mod == 1:
-            self.Cphi_mod[:,:,0,0] = self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)*self.pistonFilterIn_
+        if nL_mod == nL:
+            self.Cphi_mod = self.Cphi
         else:
-            for j in range(nL_mod):
-                self.Cphi_mod[:,:,j,j] = self.atm_mod.layer[j].weight * self.atm_mod.r0**(-5/3)*cte*(self.kxy**2 + 1/self.atm_mod.L0**2)**(-11/6)*self.pistonFilterIn_
-                
+            self.Cphi_mod = kernel.repeat(nL**2,axis=1).reshape((nK,nK,nL,nL))*np.diag(self.weights_mod)
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
         
-        #import pdb
-        #pdb.set_trace()
-        
-        ## TO BE OPTIMIZED ######
+        # Wtomo
         inv = np.linalg.pinv(to_inv,rcond=1/self.condmax_tomo)
-        #inv     = np.zeros(to_inv.shape,dtype=complex)
-        #uu,ss,vv= np.linalg.svd(to_inv)
-        #slim    = np.amax(ss,axis=2)/self.condmax_tomo
-        #slim    = np.repeat(slim[:,:,np.newaxis], self.nGs, axis=2) 
-        #rank    = np.sum(ss > slim,axis=2)
-
-        
-        #for x in range(to_inv.shape[0]):
-        #    for y in range(to_inv.shape[1]):
-                #slim         = np.amax(ss[x,y])/self.condmax_tomo
-                #rank         = np.sum(ss[x,y] > slim)
-                #uu2           = uu[x, y, :, :rank]
-                #uu2          /= ss[x,y, :rank]
-                #inv[x,y,:,:] = np.transpose(np.conj(np.dot(uu2, np.asarray(vv[x,y,:rank]) ) ) )
-        ############################
-       
-        
         Wtomo = np.matmul(np.matmul(self.Cphi_mod,MP_t),inv)        
         self.ttomo = time.time() - tstart
         return Wtomo
@@ -491,21 +452,8 @@ class fourierModel:
             mat1   += np.matmul(Pdm_t,Pl)*self.weightOpt[d_o]
             to_inv += np.matmul(Pdm_t,Pdm)*self.weightOpt[d_o]
             
-        
-        
-        ## TO BE OPTIMIZED ######
+        # Popt
         mat2 = np.linalg.pinv(to_inv,rcond=1/self.condmax_popt)
-        #mat2 = np.zeros(to_inv.shape,dtype=complex)
-        #u,s,vh      = np.linalg.svd(to_inv)
-        #for x in range(to_inv.shape[0]):
-        #    for y in range(to_inv.shape[1]):
-        #        slim        = np.amax(s[x,y])/self.condmax_tomo
-        #        rank        = np.sum(s[x,y] > slim)
-        #        uu          = u[x, y, :, :rank]
-        #        uu          /= s[x,y, :rank]
-        #        mat2[x,y,:,:] = np.transpose(np.conj(np.dot(uu, np.asarray(vh[x,y,:rank]) ) ) )
-        ############################
-        
         Popt = np.matmul(mat2,mat1)
         
         self.topt = time.time() - tstart
@@ -519,7 +467,12 @@ class fourierModel:
         # Computation of the Pbeta^DM matrix
         nDm     = len(self.h_dm)
         nK      = self.resAO
-
+        i       = complex(0,1)
+        nK      = self.resAO
+        nH      = self.nbLayers
+        Hs      = self.heights
+        d       = self.pitchs_dm[0]
+            
         self.PbetaDM = []
         for s in range(self.nSrc):
             fx = self.src[s].direction[0]*self.kx
@@ -527,10 +480,23 @@ class fourierModel:
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm): #loop on DMs
                 index               = self.kxy <= self.kc[j]
-                PbetaDM[index,0,j]  = np.exp(complex(0,1)*2*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
+                PbetaDM[index,0,j]  = np.exp(2*i*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
-        
+        # Computation of the Malpha matrix
+        self.wDir_x  = np.cos(self.wDir*np.pi/180)
+        self.wDir_y  = np.sin(self.wDir*np.pi/180)
+        self.MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
+        for h in range(nH):
+            www = np.sinc(self.samplingTime*self.wSpeed[h]*(self.wDir_x[h]*self.kx + self.wDir_y[h]*self.ky))
+            for g in range(self.nGs):
+                Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
+                fx = Alpha[0]*self.kx
+                fy = Alpha[1]*self.ky
+                self.MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])*\
+                    np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
+            
+        self.Walpha = np.matmul(self.W,self.MPalphaL)
 #%% CONTROLLER DEFINITION
     def  controller(self,nTh=1,nF=500):
         """
@@ -661,25 +627,22 @@ class fourierModel:
     def noisePSD(self):
         """NOISEPSD Noise error power spectrum density
         """
-        psd = np.zeros((self.resAO,self.resAO),dtype=complex)
+        
         if self.noiseVariance[0] > 0:
             if self.nGs < 2:        
-                psd[self.mskIn_] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[self.mskIn_])**2 + abs(self.Ry[self.mskIn_]**2));    
+                psd = np.zeros((self.resAO,self.resAO),dtype=complex)
+                psd[self.mskIn_] = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx[self.mskIn_])**2 + abs(self.Ry[self.mskIn_]**2))
+                psd = psd*self.pistonFilterIn_
             else:  
-                nK      = self.resAO
-                W       = self.W
-                PbetaDM = self.PbetaDMj
-                Cb      = self.Cb
-                PW      = np.matmul(PbetaDM,W)
-                PW_t    = np.conj(PW.transpose(0,1,3,2))
+                psd = np.zeros((self.resAO,self.resAO,self.nSrc),dtype=complex)
+                #PbetaDM = self.PbetaDMj
+                for j in range(self.nSrc):
+                    PW      = np.matmul(self.PbetaDM[j],self.W)
+                    PW_t    = np.conj(PW.transpose(0,1,3,2))
+                    tmp     = np.matmul(PW,np.matmul(self.Cb,PW_t))
+                    psd[:,:,j] = tmp[:,:,0,0]*self.pistonFilterIn_
                 
-                #### TO BE OPTIMIZED !!!! ############
-                for x in range(nK):
-                    for y in range(nK):
-                        if self.mskIn_[x,y] == True:
-                            psd[x,y] = np.dot(PW[x,y,:,:],np.dot(Cb[x,y,:,:],PW_t[x,y,:,:]))
-                #### TO BE OPTIMIZED !!!! ############
-        return psd*self.pistonFilterIn_*self.noiseGain
+        return psd*self.noiseGain
     
     def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
@@ -724,45 +687,29 @@ class fourierModel:
                 - 2*np.real(F*self.h1[self.mskIn_]*A[self.mskIn_]))*self.Wphi[self.mskIn_]
                                 
         else:
-            
+            psd = np.zeros((self.resAO,self.resAO,self.nSrc),dtype=complex)        
             deltaT  = self.latency+self.samplingTime
             nK      = self.resAO
             nH      = self.nbLayers
             Hs      = self.heights
             i       = complex(0,1)
-            d       = self.pitchs_dm[0]
-            wDir_x  = np.cos(self.wDir*np.pi/180)
-            wDir_y  = np.sin(self.wDir*np.pi/180)
             
-            Beta = [self.srcj.direction[0],self.srcj.direction[1]]
-            
-            MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
-            for h in range(nH):
-                www = np.sinc(self.samplingTime*self.wSpeed[h]*(wDir_x[h]*self.kx + wDir_y[h]*self.ky))
-                for g in range(self.nGs):
-                    Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
-                    fx = Alpha[0]*self.kx
-                    fy = Alpha[1]*self.ky
-                    MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])*\
-                    np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
-            
-            PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
-            fx = Beta[0]*self.kx
-            fy = Beta[1]*self.ky
-            for j in range(nH):
-                PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
-                      (fx[self.mskIn_]+fy[self.mskIn_]) -  deltaT*self.wSpeed[j]\
-                      *(wDir_x[j]*self.kx[self.mskIn_] + wDir_y[j]*self.ky[self.mskIn_]) ))
-            
-            PbetaDM = self.PbetaDMj
-            W       = self.W
-            Cphi    = self.Cphi # PSD obtained from the true atmosphere
-            
-            proj    = PbetaL - np.matmul(PbetaDM,np.matmul(W,MPalphaL))            
-            proj_t  = np.conj(proj.transpose(0,1,3,2))
-            psd     = np.matmul(proj,np.matmul(Cphi,proj_t))
-            psd     = psd[:,:,0,0]
-        return psd*self.pistonFilterIn_
+            for s in range(self.nSrc):
+                Beta = [self.src[s].direction[0],self.src[s].direction[1]]
+                PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
+                fx = Beta[0]*self.kx
+                fy = Beta[1]*self.ky
+                for j in range(nH):
+                    PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
+                          (fx[self.mskIn_]+fy[self.mskIn_]) -  deltaT*self.wSpeed[j]\
+                          *(self.wDir_x[j]*self.kx[self.mskIn_] + self.wDir_y[j]*self.ky[self.mskIn_]) ))
+  
+                proj    = PbetaL - np.matmul(self.PbetaDM[s],self.Walpha)            
+                proj_t  = np.conj(proj.transpose(0,1,3,2))
+                tmp     = np.matmul(proj,np.matmul(self.Cphi,proj_t))
+                psd[:,:,s] = tmp[:,:,0,0]*self.pistonFilterIn_
+                
+        return psd
     
     def anisoplanatismPSD(self):
         """%% ANISOPLANATISMPSD Anisoplanatism power spectrum density
@@ -842,21 +789,21 @@ class fourierModel:
         id1 = np.floor(self.fovInPixel/2 - self.resAO/2).astype(int)
         id2 = np.floor(self.fovInPixel/2 + self.resAO/2).astype(int)
         
+        # Noise
+        self.psdNoise           = np.real(self.noisePSD())       
         # Aliasing
         if self.nGs == 1:
             self.psdAlias           = np.real(self.aliasingPSD())
             psd[id1:id2,id1:id2,:]  = np.repeat(self.psdAlias[:, :, np.newaxis], self.nSrc, axis=2)
+            psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + np.repeat(self.psdNoise[:, :, np.newaxis], self.nSrc, axis=2)
         else:
             self.psdAlias           = np.zeros((self.resAO,self.resAO))
+            psd[id1:id2,id1:id2,:]  = self.psdNoise
         
-        # Add the spatioTemporal PSD
-        for j in range(self.nSrc):
-            self.srcj               = self.src[j]
-            self.PbetaDMj           = self.PbetaDM[j]
-            self.psdSpatioTemporal  = self.spatioTemporalPSD()
-            self.psdNoise           = self.noisePSD()
-            psd[id1:id2,id1:id2,j]  = np.real(self.psdSpatioTemporal + self.psdNoise)
-        
+        # Add the noise and spatioTemporal PSD
+        self.psdSpatioTemporal  = np.real(self.spatioTemporalPSD())
+        psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + self.psdSpatioTemporal
+       
         # Fitting
         self.psdFit = np.real(self.fittingPSD())
         psd = psd + np.repeat(self.psdFit[:, :, np.newaxis], self.nSrc, axis=2)
