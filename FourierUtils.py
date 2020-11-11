@@ -661,7 +661,7 @@ def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_gu
         #Getting the ellipse orientation
         xm      = wx[wr.argmax()]
         ym      = wy[wr.argmax()]
-        theta   = np.mean(180*np.arctan(ym/xm)/np.pi)
+        theta   = np.mean(180*np.arctan2(ym,xm)/np.pi)
     elif method == 'gaussian':
         # Prepare array r with radius in arcseconds
         y, x = np.indices(psf.shape, dtype=float)

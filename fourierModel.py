@@ -51,6 +51,47 @@ plt.rcParams.update({
 })
  
 #%%
+def timeit(method):
+    def timed(*args, **kw):
+        ts = time.time()
+        result = method(*args, **kw)
+        te = time.time()       
+        if 'log_time' in kw:
+            name = kw.get('log_name', method.__name__.upper())
+            kw['log_time'][name] = int((te - ts) * 1000)
+        else:
+            print('%r  %2.2f ms' %(method.__name__, (te - ts) * 1000))
+        return result    
+    return timed
+            
+def demoMavisPSD():
+    # Instantiate the FourierModel class
+    t0 = time.time()
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
+    PSD = fao.powerSpectrumDensity()
+    ttot = time.time() - t0
+    print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
+    return PSD
+
+def demoMavisPSF():
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
+    return fao
+
+def demoHarmoniPSF():
+    if sys.platform[0:3] == 'win':
+        fao = fourierModel(os.getcwd()+"\parFile\harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
+    else:
+        fao = fourierModel(os.getcwd()+"/parFile/harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
+                       getErrorBreakDown=False,getFWHM=True,getEncircledEnergy=True,getEnsquaredEnergy=False,displayContour=True)    
+    return fao
+    
 class fourierModel:
     """ Fourier class gathering the PSD calculation for PSF reconstruction. 
     """
@@ -74,6 +115,7 @@ class fourierModel:
         return math.ceil(self.fovInPixel/self.resAO)
 
     # CONTRUCTOR
+    @timeit
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
                  ,displayContour=False):
@@ -87,7 +129,6 @@ class fourierModel:
         self.status = self.parameters(self.file)        
         
         if self.status:
-            start = time.time()
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
             kx = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
             ky = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
@@ -156,12 +197,9 @@ class fourierModel:
             self.PSD = []
             self.SR  = []
             self.FWHM= []
-            self.EE  = []
-            
-            if self.verbose:
-                self.elapsed_time_init = (time.time() - start) 
-                print("Required time for initialization (s)\t : {:f}".format(self.elapsed_time_init))
-          
+            self.EnsE= []
+            self.EnsqE= []
+ 
             if calcPSF:
                 self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown,\
                             getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy)
@@ -180,7 +218,7 @@ class fourierModel:
         #self.displayResults()
         
         return s
-    
+    @timeit
     def parameters(self,file):
                     
         start = time.time() 
@@ -262,7 +300,6 @@ class fourierModel:
         self.nph_HO         = eval(config['SENSOR_HO']['nph_HO'])
         self.pixel_Scale_HO = eval(config['SENSOR_HO']['pixel_scale_HO'])
         self.sigmaRON_HO    = eval(config['SENSOR_HO']['sigmaRON_HO'])
-        #self.Npix_per_subap_HO = eval(config['SENSOR_HO']['Npix_per_subap_HO'])
         
         # Calculate the noise variance
         self.pitchs_wfs     = self.D/self.nLenslet_HO * np.ones(self.nGs)
@@ -349,12 +386,11 @@ class fourierModel:
             self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
         
         self.tinit = (time.time() - start) 
-        if self.verbose:
-            print("Required time for grabbing param. (s)\t : {:f}".format(self.tinit))
         
         return 1
     
 #%% RECONSTRUCTOR DEFINITION    
+    @timeit
     def reconstructionFilter(self,MV=0):
         """
         """          
@@ -379,7 +415,8 @@ class fourierModel:
         N = int(np.ceil((self.kx.shape[0]-1)/2))
         self.Rx[N,N] = 0
         self.Ry[N,N] = 0
-
+    
+    @timeit
     def tomographicReconstructor(self):
         
         tstart  = time.time()
@@ -423,7 +460,7 @@ class fourierModel:
         self.ttomo = time.time() - tstart
         return Wtomo
  
-
+    @timeit
     def optimalProjector(self):
         
         tstart = time.time()
@@ -460,6 +497,7 @@ class fourierModel:
         self.topt = time.time() - tstart
         return Popt
  
+    @timeit
     def finalReconstructor(self):
         self.Wtomo  = self.tomographicReconstructor()
         self.Popt   = self.optimalProjector()
@@ -500,6 +538,7 @@ class fourierModel:
         self.Walpha = np.matmul(self.W,self.MPalphaL)
         
 #%% CONTROLLER DEFINITION
+    @timeit
     def  controller(self,nTh=1,nF=500):
         """
         """
@@ -574,7 +613,8 @@ class fourierModel:
         self.hn = hn
                 
         
- #%% PSD DEFINTIONS      
+ #%% PSD DEFINTIONS   
+    @timeit   
     def fittingPSD(self):
         """ FITTINGPSD Fitting error power spectrum density """                 
         #Instantiate the function output
@@ -582,6 +622,7 @@ class fourierModel:
         psd[self.mskOut_]   = self.atm.spectrum(self.kExtxy[self.mskOut_])
         return psd
     
+    @timeit    
     def aliasingPSD(self):
         """
         """
@@ -625,7 +666,8 @@ class fourierModel:
             psd[self.mskIn_]   = tmp[self.mskIn_]
         
         return psd*self.atm.r0**(-5/3)*0.0229 
-            
+    
+    @timeit        
     def noisePSD(self):
         """NOISEPSD Noise error power spectrum density
         """
@@ -646,6 +688,7 @@ class fourierModel:
                 
         return psd*self.noiseGain
     
+    @timeit
     def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
         """
@@ -662,6 +705,7 @@ class fourierModel:
             
         return psd*self.pistonFilterIn_
     
+    @timeit
     def spatioTemporalPSD(self):
         """%% SPATIOTEMPORALPSD Power spectrum density including reconstruction, field variations and temporal effects
         """
@@ -713,6 +757,7 @@ class fourierModel:
                 
         return psd
     
+    @timeit
     def anisoplanatismPSD(self):
         """%% ANISOPLANATISMPSD Anisoplanatism power spectrum density
         """
@@ -733,6 +778,7 @@ class fourierModel:
         
         return psd*self.pistonFilterIn_
     
+    @timeit
     def tomographyPSD(self):
         """%% TOMOGRAPHYPSD Tomographic error power spectrum density
         """
@@ -776,7 +822,8 @@ class fourierModel:
         psd     = psd[:,:,0,0]
 
         return psd*self.pistonFilterIn_
-        
+    
+    @timeit    
     def powerSpectrumDensity(self):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
@@ -813,6 +860,7 @@ class fourierModel:
         # Return the 3D PSD array in nm^2.m^2
         return psd * (dk * wvl*1e9/2/np.pi)**2
     
+    @timeit
     def errorBreakDown(self):
         """
         """        
@@ -850,12 +898,11 @@ class fourierModel:
                 self.wfeTomo = np.sqrt(self.wfeST**2 - self.wfeS**2)
                 print('.Sole tomographic error:\t%4.2fnm'%self.wfeTomo[idCenter])
             print('-------------------------------------------')
-                
+     
+    @timeit           
     def getPSF(self,verbose=False,fftphasor=False,getErrorBreakDown=False,getFWHM=False,getEncircledEnergy=False,getEnsquaredEnergy=False,displayContour=False):
         """
         """
-        start0 = time.time()
-        
         if not self.status:
             print("The fourier Model class must be instantiated first\n")
             return 0,0
@@ -864,7 +911,6 @@ class fourierModel:
         self.SR  = np.zeros((self.nSrc,self.nWvl))
         
         # DEFINE THE FFT PHASOR AND MULTIPLY TO THE TELESCOPE OTF
-        t1 = time.time()
         if fftphasor:
              # FOURIER PHASOR
              uu =  fft.fftshift(fft.fftfreq(self.fovInPixel))  
@@ -880,19 +926,17 @@ class fourierModel:
         self.PSD   = self.powerSpectrumDensity() 
                 
         # GET THE AO RESIDUAL PHASE STRUCTURE FUNCTION
-        t1 = time.time()
+        #t1 = time.time()
         cov = fft.fftshift(fft.fftn(fft.fftshift(self.PSD,axes=(0,1)),axes=(0,1)),axes=(0,1))
         sf  = (2*cov.max(axis=(0,1)) - cov - np.conj(cov))
-        self.tpsd  = time.time() - t1
 
         
         # LOOP ON WAVELENGTHS   
-        t1  = time.time()
         for j in range(self.nWvl):
             # GET THE AO RESIDUAL OTF
             otfTot      = fft.fftshift(np.exp(-0.5*sf*(2*np.pi*1e-9/self.wvlSrc[j])**2) * kernel,axes=(0,1))
             self.SR[:,j]= 1e2*np.abs(otfTot).sum(axis=(0,1))/S
-            self.totf   = time.time() - t1
+            #self.totf   = time.time() - t1
             
             # GET THE FINAL PSF
             psf = np.real(fft.fftshift(fft.ifftn(otfTot,axes=(0,1)),axes = (0,1)))
@@ -900,47 +944,33 @@ class fourierModel:
                 self.PSF[:,:,:,j] = FourierUtils.interpolateSupport(psf,round(self.resolution*2*self.samp).astype('int'))
             else:
                 self.PSF[:,:,:,j] = psf           
-        self.tpsf = time.time() - t1
 
         # GET THE WAVE FRONT ERROR BREAKDOWN
-        t1 = time.time()
         if getErrorBreakDown == True:
             self.errorBreakDown()                
-        self.terr = time.time() - t1
         
         # GET METRICS
-        self.FWHM = []
-        self.EnsqE=[]
-        self.EncE=[]
         if getFWHM == True or getEnsquaredEnergy==True or getEncircledEnergy==True:
-            self.FWHM = np.zeros((2,self.nSrc,self.nWvl))
-            if getEnsquaredEnergy==True:
-                self.EnsqE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
-            if getEncircledEnergy==True:
-                self.EncE   = np.zeros((int(self.fovInPixel/np.sqrt(2)),self.nSrc,self.nWvl))
-            for n in range(self.nSrc):
-                for j in range(self.nWvl):
-                    if getFWHM == True:
-                        self.FWHM[:,n,j]  = FourierUtils.getFWHM(self.PSF[:,:,n,j],self.psInMas,rebin=1,method='contour',nargout=2)
-                    if getEnsquaredEnergy == True:
-                        self.EnsqE[:,n,j] = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF[:,:,n,j])
-                    if getEncircledEnergy == True:
-                        self.EncE[:,n,j]  = 1e2*FourierUtils.getEncircledEnergy(self.PSF[:,:,n,j])
-        
-        self.tcalc = (time.time() - start0) 
-        
-        if self.verbose == True:
-            print("Required time for total calculation (s)\t : {:f}".format(self.tcalc))
-            print("Required time for psf calculation (s)\t : {:f}".format(self.tpsf))
-            print("Required time for psd calculation (s)\t : {:f}".format(self.tpsd))
-            print("Required time for reconstructor init (s) : {:f}".format(self.trec))
-            print("Required time for tomography init (s)\t : {:f}".format(self.ttomo))
-            print("Required time for optimization init (s)\t : {:f}".format(self.topt))
-            print("Required time for controller init (s)\t : {:f}".format(self.tcont))
-            print("Required time for error calculation (s)\t : {:f}".format(self.terr))
-            print("--------------------------------------------")
-            print("Total - {:d} positions - {:d} wvl (s)\t : {:f} ".format(self.nSrc,self.nWvl,self.tcalc + self.tinit + self.elapsed_time_init))
-    
+            self.getPsfMetrics(getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy,getFWHM=getFWHM)
+            
+    @timeit
+    def getPsfMetrics(self,getEnsquaredEnergy=False,getEncircledEnergy=False,getFWHM=False):
+        self.FWHM = np.zeros((2,self.nSrc,self.nWvl))
+        if getEnsquaredEnergy==True:
+            self.EnsqE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
+        if getEncircledEnergy==True:
+            self.EncE   = np.zeros((int(self.fovInPixel/np.sqrt(2)),self.nSrc,self.nWvl))
+        for n in range(self.nSrc):
+            for j in range(self.nWvl):
+                if getFWHM == True:
+                    self.FWHM[:,n,j]  = FourierUtils.getFWHM(self.PSF[:,:,n,j],self.psInMas,rebin=1,method='contour',nargout=2)
+                if getEnsquaredEnergy == True:
+                    self.EnsqE[:,n,j] = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF[:,:,n,j])
+                if getEncircledEnergy == True:
+                    self.EncE[:,n,j]  = 1e2*FourierUtils.getEncircledEnergy(self.PSF[:,:,n,j])
+                        
+                        
+    @timeit
     def displayResults(self,eewidthIDiamInMas=120,displayContour=False):
         """
         """
@@ -1014,7 +1044,8 @@ class fourierModel:
                 plt.xlabel("Off-axis distance")
                 plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
                 plt.show()
-                
+    
+    @timeit            
     def displayPsfMetricsContours(self,eewidthIDiamInMas=120):
 
         
@@ -1079,33 +1110,5 @@ class fourierModel:
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
-            
-def demoMavisPSD():
-    # Instantiate the FourierModel class
-    t0 = time.time()
-    if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
-    else:
-        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=False,verbose=True,display=False,getErrorBreakDown=False)
-    PSD = fao.powerSpectrumDensity()
-    ttot = time.time() - t0
-    print("Total calculation time - {:d} PSD (s)\t : {:f} ".format(fao.nSrc,ttot))
-    return PSD
 
-def demoMavisPSF():
-    if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
-    else:
-        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
-    return fao
-
-def demoHarmoniPSF():
-    if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
-    else:
-        fao = fourierModel(os.getcwd()+"/parFile/harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getFWHM=True,getEncircledEnergy=True,getEnsquaredEnergy=False,displayContour=True)    
-    return fao
     
-    return fao
