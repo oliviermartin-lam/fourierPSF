@@ -37,7 +37,7 @@ from source import source
 
    
 #%% DISPLAY FEATURES
-mpl.rcParams['font.size'] = 18
+mpl.rcParams['font.size'] = 16
 
 if find_executable('tex'): 
     usetex = True
@@ -75,7 +75,8 @@ class fourierModel:
 
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
-                 getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
+                 getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
+                 ,displayContour=False):
     
         # PARSING INPUTS
         self.verbose = verbose
@@ -163,7 +164,7 @@ class fourierModel:
           
             if calcPSF:
                 self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown,\
-                            getPSFMetrics=getPSFMetrics)
+                            getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy)
                 if display:
                     self.displayResults(displayContour=displayContour)
                 
@@ -497,6 +498,7 @@ class fourierModel:
                     np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
             
         self.Walpha = np.matmul(self.W,self.MPalphaL)
+        
 #%% CONTROLLER DEFINITION
     def  controller(self,nTh=1,nF=500):
         """
@@ -780,7 +782,7 @@ class fourierModel:
         """
         
         # Manage the wavelength/sampling
-        wvl             = self.src[0].wvl
+        wvl             = self.wvlRef
         self.atm.wvl    = wvl
         self.atm_mod.wvl= wvl
         dk              = 2*self.kc[0]/self.resAO
@@ -815,49 +817,41 @@ class fourierModel:
         """
         """        
         # Derives wavefront error
-        wvl         = self.atm.wvl
-        rad2nm      = 1e9*wvl/2/np.pi
-        self.wfeFit = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(self.psdFit,self.kxExt),self.kxExt)))
-        self.wfeAl  = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(self.psdAlias,self.kx),self.kx)))
-        self.wfeTot = np.zeros(self.nSrc)
-        self.wfeST  = np.zeros(self.nSrc)
-        self.wfeN   = np.zeros(self.nSrc)
-        self.SRmar  = np.zeros((self.nSrc,self.nWvl))
-        
-        for j in range(self.nSrc):
-            self.srcj       = self.src[j]
-            self.PbetaDMj   = self.PbetaDM[j]
-            self.wfeN[j]    = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(self.noisePSD(),self.kx),self.kx))))
-            self.wfeST[j]   = np.real(np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(self.spatioTemporalPSD(),self.kx),self.kx))))   
-            self.wfeTot[j]  = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST[j]**2 + self.wfeN[j]**2)
-            self.SRmar[j,:] = 100*np.exp(-(self.wfeTot[j]*2*np.pi*1e-9/self.wvlSrc)**2)
+        rad2nm      = 2*self.kc[0]/self.resAO * self.wvlRef*1e9/2/np.pi
+        self.wfeFit = np.sqrt(self.psdFit.sum()) * rad2nm
+        self.wfeAl  = np.sqrt(self.psdAlias.sum()) * rad2nm
+        self.wfeN   = np.sqrt(self.psdNoise.sum(axis=(0,1)))* rad2nm
+        self.wfeST  = np.sqrt(self.psdSpatioTemporal.sum(axis=(0,1)))* rad2nm
+        self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
+        self.SRmar  = 100*np.exp(-(self.wfeTot*2*np.pi*1e-9/self.wvlSrc)**2)
         
         # Print
         if self.verbose == True:
-            print('\n_____ ERROR BREAKDOWN  _____')
+            print('\n_____ ERROR BREAKDOWN  ON-AXIS_____')
             print('------------------------------------------')
-            print('.Image Strehl at %4.2fmicron:\t%4.2f%s'%(self.wvlSrc[0]*1e6,self.SR[0,0],'%'))
-            print('.Maréchal Strehl at %4.2fmicron:\t%4.2f%s'%(self.wvlSrc[0]*1e6,self.SRmar[0,0],'%'))
-            print('.Residual wavefront error:\t%4.2fnm'%self.wfeTot[0])
+            idCenter = self.zenithSrc.argmin()
+            print('.Image Strehl at %4.2fmicron:\t%4.2f%s'%(self.wvlRef*1e6,self.SR[idCenter,0],'%'))
+            print('.Maréchal Strehl at %4.2fmicron:\t%4.2f%s'%(self.atm.wvl*1e6,self.SRmar[idCenter],'%'))
+            print('.Residual wavefront error:\t%4.2fnm'%self.wfeTot[idCenter])
             print('.Fitting error:\t\t\t%4.2fnm'%self.wfeFit)
             print('.Aliasing error:\t\t%4.2fnm'%self.wfeAl)
-            print('.Noise error:\t\t\t%4.2fnm'%self.wfeN[0])
-            print('.Spatio-temporal error:\t\t%4.2fnm'%self.wfeST[0])
+            print('.Noise error:\t\t\t%4.2fnm'%self.wfeN[idCenter])
+            print('.Spatio-temporal error:\t\t%4.2fnm'%self.wfeST[idCenter])
             print('-------------------------------------------')
-            psdS      = self.servoLagPSD()
-            self.wfeS = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdS,self.kx),self.kx)))
+            self.psdS = self.servoLagPSD()
+            self.wfeS = np.sqrt(self.psdS.sum()) * rad2nm
             print('.Sole servoLag error:\t\t%4.2fnm'%self.wfeS)
             print('-------------------------------------------')            
             if self.nGs == 1:
-                psdAni      = self.anisoplanatismPSD()
-                self.wfeAni = np.mean(rad2nm*np.sqrt(np.trapz(np.trapz(psdAni,self.kx),self.kx)))
-                print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeAni)
+                self.psdAni = self.anisoplanatismPSD()
+                self.wfeAni = np.sqrt(self.psdAni.sum(axis=(0,1))) * rad2nm
+                print('.Sole anisoplanatism error:\t%4.2fnm'%self.wfeAni[idCenter])
             else:
-                self.wfeTomo = np.sqrt(self.wfeST**2 - self.wfeS)
-                print('.Sole tomographic error:\t%4.2fnm'%self.wfeTomo[0])
+                self.wfeTomo = np.sqrt(self.wfeST**2 - self.wfeS**2)
+                print('.Sole tomographic error:\t%4.2fnm'%self.wfeTomo[idCenter])
             print('-------------------------------------------')
                 
-    def getPSF(self,verbose=False,fftphasor=False,getErrorBreakDown=False,getPSFMetrics=False,displayContour=False):
+    def getPSF(self,verbose=False,fftphasor=False,getErrorBreakDown=False,getFWHM=False,getEncircledEnergy=False,getEnsquaredEnergy=False,displayContour=False):
         """
         """
         start0 = time.time()
@@ -915,13 +909,23 @@ class fourierModel:
         self.terr = time.time() - t1
         
         # GET METRICS
-        if getPSFMetrics == True:
+        self.FWHM = []
+        self.EnsqE=[]
+        self.EncE=[]
+        if getFWHM == True or getEnsquaredEnergy==True or getEncircledEnergy==True:
             self.FWHM = np.zeros((2,self.nSrc,self.nWvl))
-            self.EE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
+            if getEnsquaredEnergy==True:
+                self.EnsqE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
+            if getEncircledEnergy==True:
+                self.EncE   = np.zeros((int(self.fovInPixel/np.sqrt(2)),self.nSrc,self.nWvl))
             for n in range(self.nSrc):
                 for j in range(self.nWvl):
-                    self.FWHM[:,n,j] = FourierUtils.getFWHM(self.PSF[:,:,n,j],self.psInMas,rebin=2,method='contour',nargout=2)
-                    self.EE[:,n,j]   = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF[:,:,n,j])
+                    if getFWHM == True:
+                        self.FWHM[:,n,j]  = FourierUtils.getFWHM(self.PSF[:,:,n,j],self.psInMas,rebin=1,method='contour',nargout=2)
+                    if getEnsquaredEnergy == True:
+                        self.EnsqE[:,n,j] = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF[:,:,n,j])
+                    if getEncircledEnergy == True:
+                        self.EncE[:,n,j]  = 1e2*FourierUtils.getEncircledEnergy(self.PSF[:,:,n,j])
         
         self.tcalc = (time.time() - start0) 
         
@@ -957,7 +961,7 @@ class fourierModel:
                 plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[nmin],self.zenithSrc[nmax]))
                 P = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
             elif self.PSF.shape[2] >1 and self.PSF.shape[3] >1:
-                plt.title("PSFs at {:.0f} and {:.0f} arcsec from center - Top: {:.0f}nm - Bottom:{:.0f} nm".format(self.zenithSrc[0],self.zenithSrc[-1],1e9*self.wvlSrc[0],1e9*self.wvlSrc[-1]))
+                plt.title("PSFs at {:.0f} and {:.0f} arcsec from center\n - Top: {:.0f}nm - Bottom:{:.0f} nm".format(self.zenithSrc[0],self.zenithSrc[-1],1e9*self.wvlSrc[0],1e9*self.wvlSrc[-1]))
                 P1 = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
                 P2 = np.concatenate((self.PSF[:,:,nmin,-1],self.PSF[:,:,nmax,-1]),axis=1)
                 P  = np.concatenate((P1,P2),axis=0)
@@ -987,18 +991,30 @@ class fourierModel:
                 plt.show()
          
             # Ensquared energy
-            if np.any(self.EE):
+            if np.any(self.EnsqE):
                 nntrue      = eewidthIDiamInMas/self.psInMas
                 nn2         = int(nntrue)
-                EEmin       = self.EE[nn2,:,0]
-                EEmax       = self.EE[nn2+1,:,0]
+                EEmin       = self.EnsqE[nn2,:,0]
+                EEmax       = self.EnsqE[nn2+1,:,0]
                 EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
                 plt.figure()
                 plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.ylabel("{:f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
                 plt.show()
 
+            if np.any(self.EncE):
+                nntrue      = eewidthIDiamInMas/self.psInMas
+                nn2         = int(nntrue)
+                EEmin       = self.EncE[nn2,:,0]
+                EEmax       = self.EncE[nn2+1,:,0]
+                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
+                plt.figure()
+                plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
+                plt.xlabel("Off-axis distance")
+                plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.show()
+                
     def displayPsfMetricsContours(self,eewidthIDiamInMas=120):
 
         
@@ -1032,22 +1048,38 @@ class fourierModel:
                 plt.title("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
                 plt.colorbar()
         
-            # EE
-            if np.any(self.EE) and self.EE.shape[1] > 1:
+            # Ensquared Enery
+            if np.any(self.EnsqE) and self.EnsqE.shape[1] > 1:
                 nntrue      = eewidthIDiamInMas/self.psInMas
                 nn2         = int(nntrue)
-                EEmin       = self.EE[nn2,:,0]
-                EEmax       = self.EE[nn2+1,:,0]
+                EEmin       = self.EnsqE[nn2,:,0]
+                EEmax       = self.EnsqE[nn2+1,:,0]
                 EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
                 EE          = np.reshape(EEtrue,(nn,nn))
                 plt.figure()
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas-diameter Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.colorbar()
+            
+            # Encircled Enery
+            if np.any(self.EncE) and self.EncE.shape[1] > 1:
+                nntrue      = eewidthIDiamInMas/self.psInMas
+                nn2         = int(nntrue)
+                EEmin       = self.EncE[nn2,:,0]
+                EEmax       = self.EncE[nn2+1,:,0]
+                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
+                EE          = np.reshape(EEtrue,(nn,nn))
+                plt.figure()
+                contours = plt.contour(X, Y, EE, nIntervals, colors='black')
+                plt.clabel(contours, inline=True,fmt='%1.1f')
+                plt.contourf(X,Y,EE)
+                plt.title("{:.1f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
+            
 def demoMavisPSD():
     # Instantiate the FourierModel class
     t0 = time.time()
@@ -1062,9 +1094,9 @@ def demoMavisPSD():
 
 def demoMavisPSF():
     if sys.platform[0:3] == 'win':
-        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False,getPSFMetrics=False)
+        fao = fourierModel(os.getcwd()+"\parFile\mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
     else:
-        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False,getPSFMetrics=False)
+        fao = fourierModel(os.getcwd()+"/parFile/mavisParams.ini",calcPSF=True,verbose=True,display=True,getErrorBreakDown=False)
     return fao
 
 def demoHarmoniPSF():
@@ -1073,7 +1105,7 @@ def demoHarmoniPSF():
                        getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
     else:
         fao = fourierModel(os.getcwd()+"/parFile/harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getPSFMetrics=True,displayContour=True)    
+                       getErrorBreakDown=False,getFWHM=True,getEncircledEnergy=True,getEnsquaredEnergy=False,displayContour=True)    
     return fao
     
     return fao

@@ -9,6 +9,7 @@ import numpy as np
 import scipy.special as spc
 import numpy.fft as fft
 import matplotlib.pyplot as plt
+from astropy.modeling import models, fitting
 
 #%%  FOURIER TOOLS
 
@@ -439,8 +440,141 @@ def getEnsquaredEnergy(psf):
     
     EE = np.zeros(nEE+1)
     for n in range(nEE+1):
-        EE[n] = psf[y0 - n:y0+n+1,x0-n:x0+n+1].sum()/S
-    return EE
+        EE[n] = psf[y0 - n:y0+n+1,x0-n:x0+n+1].sum()
+    return EE/S
+
+def getEncircledEnergy(psf,pixelscale=1,nargout=1):            
+    
+    rr, radialprofile2, ee = radial_profile(psf,ee=True,pixelscale=pixelscale)
+    if nargout==1:
+        return ee
+    elif nargout == 2:
+        return ee,rr
+
+
+def radial_profile(image, ext=0, pixelscale=1,ee=False, center=None, stddev=False, binsize=None, maxradius=None,
+                   normalize='None', pa_range=None, slice=0):
+    """ Compute a radial profile of the image.
+
+    This computes a discrete radial profile evaluated on the provided binsize. For a version
+    interpolated onto a continuous curve, see measure_radial().
+
+    Code taken pretty much directly from pydatatut.pdf
+
+    Parameters
+    ----------
+    image : numpy array
+    ext : int
+        Extension in FITS file
+    ee : bool
+        Also return encircled energy (EE) curve in addition to radial profile?
+    center : tuple of floats
+        Coordinates (x,y) of PSF center, in pixel units. Default is image center.
+    binsize : float
+        size of step for profile. Default is pixel size.
+    stddev : bool
+        Compute standard deviation in each radial bin, not average?
+    normalize : string
+        set to 'peak' to normalize peak intensity =1, or to 'total' to normalize total flux=1.
+        Default is no normalization (i.e. retain whatever normalization was used in computing the PSF itself)
+    pa_range : list of floats, optional
+        Optional specification for [min, max] position angles to be included in the radial profile.
+        I.e. calculate that profile only for some wedge, not the full image. Specify the PA in degrees
+        counterclockwise from +Y axis=0. Note that you can specify ranges across zero using negative numbers,
+        such as pa_range=[-10,10].  The allowed PA range runs from -180 to 180 degrees.
+    slice: integer, optional
+        Slice into a datacube, for use on cubes computed by calc_datacube. Default 0 if a
+        cube is provided with no slice specified.
+
+    Returns
+    --------
+    results : tuple
+        Tuple containing (radius, profile) or (radius, profile, EE) depending on what is requested.
+        The radius gives the center radius of each bin, while the EE is given inside the whole bin
+        so you should use (radius+binsize/2) for the radius of the EE curve if you want to be
+        as precise as possible.
+    """
+    
+    if normalize.lower() == 'peak':
+        print("Calculating profile with PSF normalized to peak = 1")
+        image /= image.max()
+    elif normalize.lower() == 'total':
+        print("Calculating profile with PSF normalized to total = 1")
+        image /= image.sum()
+
+
+    if binsize is None:
+        binsize = pixelscale
+
+    y, x = np.indices(image.shape, dtype=float)
+    if center is None:
+        # get exact center of image
+        # center = (image.shape[1]/2, image.shape[0]/2)
+        center = tuple((a - 1) / 2.0 for a in image.shape[::-1])
+
+    x -= center[0]
+    y -= center[1]
+
+    r = np.sqrt(x ** 2 + y ** 2) * pixelscale / binsize  # radius in bin size steps
+
+    if pa_range is None:
+        # Use full image
+        ind = np.argsort(r.flat)
+        sr = r.flat[ind]  # sorted r
+        sim = image.flat[ind]  # sorted image
+
+    else:
+        # Apply the PA range restriction
+        pa = np.rad2deg(np.arctan2(-x, y))  # Note the (-x,y) convention is needed for astronomical PA convention
+        mask = (pa >= pa_range[0]) & (pa <= pa_range[1])
+        ind = np.argsort(r[mask].flat)
+        sr = r[mask].flat[ind]
+        sim = image[mask].flat[ind]
+
+    ri = sr.astype(int)  # sorted r as int
+    deltar = ri[1:] - ri[:-1]  # assume all radii represented (more work if not)
+    rind = np.where(deltar)[0]
+    nr = rind[1:] - rind[:-1]  # number in radius bin
+    csim = np.nan_to_num(sim).cumsum(dtype=float)  # cumulative sum to figure out sums for each bin
+    # np.nancumsum is implemented in >1.12
+    tbin = csim[rind[1:]] - csim[rind[:-1]]  # sum for image values in radius bins
+    radialprofile = tbin / nr
+
+    # pre-pend the initial element that the above code misses.
+    radialprofile2 = np.empty(len(radialprofile) + 1)
+    if rind[0] != 0:
+        radialprofile2[0] = csim[rind[0]] / (
+                rind[0] + 1)  # if there are multiple elements in the center bin, average them
+    else:
+        radialprofile2[0] = csim[0]  # otherwise if there's just one then just take it.
+    radialprofile2[1:] = radialprofile
+
+    rr = np.arange(ri.min(), ri.min()+len(radialprofile2)) * binsize + binsize * 0.5  # these should be centered in the bins, so add a half.
+
+
+    if maxradius is not None:
+        crop = rr < maxradius
+        rr = rr[crop]
+        radialprofile2 = radialprofile2[crop]
+
+    if stddev:
+        stddevs = np.zeros_like(radialprofile2)
+        r_pix = r * binsize
+        for i, radius in enumerate(rr):
+            if i == 0:
+                wg = np.where(r < radius + binsize / 2)
+            else:
+                wg = np.where((r_pix >= (radius - binsize / 2)) & (r_pix < (radius + binsize / 2)))
+                # wg = np.where( (r >= rr[i-1]) &  (r <rr[i] )))
+            stddevs[i] = np.nanstd(image[wg])
+        return rr, stddevs
+
+    if not ee:
+        return rr, radialprofile2
+    else:
+        ee = csim[rind]
+        return rr, radialprofile2, ee
+    
             
 def getFlux(psf,nargout=1):
     #Define the inner circle
@@ -479,7 +613,7 @@ def getMSE(xtrue,xest,nbox=0,norm='L2'):
         print('The input norm={:s} is not recognized, choose L1 or L2'.format(norm))
         return []
 
-def getFWHM(psf,pixelScale,rebin=4,method='contour',nargout=2):
+def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_guess=2):
             
     # Gaussian and Moffat fitting are not really efficient on
     # anisoplanatic PSF. Prefer the coutour function in such a
@@ -488,7 +622,7 @@ def getFWHM(psf,pixelScale,rebin=4,method='contour',nargout=2):
             
            
     #Interpolation            
-    Nx,Ny = psf.shape
+    Ny,Nx = psf.shape
     if rebin > 1:
         im_hr = interpolateSupport(psf,rebin*np.array([Nx,Ny]))
     else:
@@ -528,9 +662,28 @@ def getFWHM(psf,pixelScale,rebin=4,method='contour',nargout=2):
         xm      = wx[wr.argmax()]
         ym      = wy[wr.argmax()]
         theta   = np.mean(180*np.arctan(ym/xm)/np.pi)
-        
-        #Angle are counted positively in the reverse clockwise direction.                                 
-        
+    elif method == 'gaussian':
+        # Prepare array r with radius in arcseconds
+        y, x = np.indices(psf.shape, dtype=float)
+        if center is None:
+            # Normalize
+            psf = psf/psf.max()
+            # get exact center of image
+            center = tuple((a - 1) / 2.0 for a in psf.shape[::-1])
+            x -= center[0]
+            y -= center[1]
+            Y, X = np.mgrid[:Ny, :Nx]*pixelScale
+            std_guess = std_guess*pixelScale
+           # Define the model
+            g_init = models.Gaussian2D(amplitude=1., x_mean=0, y_mean = 0,x_stddev=std_guess,y_stddev=std_guess)
+            g_init.x_mean.fixed = True
+            g_init.y_mean.fixed = True
+            fit_g = fitting.LevMarLSQFitter()
+            # fit x axis
+            g = fit_g(g_init, X-center[0], Y-center[1], psf)
+            FWHMx = 2 * np.sqrt(2 * np.log(2)) * np.abs(g.x_stddev)
+            FWHMy = 2 * np.sqrt(2 * np.log(2)) * np.abs(g.y_stddev)
+            
     # Get Ellipticity
     aRatio      = np.max([FWHMx/FWHMy,FWHMy/FWHMx])
     
