@@ -197,7 +197,7 @@ class fourierModel:
             self.PSD = []
             self.SR  = []
             self.FWHM= []
-            self.EnsE= []
+            self.EncE= []
             self.EnsqE= []
  
             if calcPSF:
@@ -451,7 +451,7 @@ class fourierModel:
         if nL_mod == nL:
             self.Cphi_mod = self.Cphi
         else:
-            self.Cphi_mod = kernel.repeat(nL**2,axis=1).reshape((nK,nK,nL,nL))*np.diag(self.weights_mod)
+            self.Cphi_mod = kernel.repeat(nL_mod**2,axis=1).reshape((nK,nK,nL_mod,nL_mod))*np.diag(self.weights_mod)
         to_inv  = np.matmul(np.matmul(MP,self.Cphi_mod),MP_t) + self.Cb 
         
         # Wtomo
@@ -959,7 +959,8 @@ class fourierModel:
         if getEnsquaredEnergy==True:
             self.EnsqE   = np.zeros((int(self.fovInPixel/2)+1,self.nSrc,self.nWvl))
         if getEncircledEnergy==True:
-            self.EncE   = np.zeros((int(self.fovInPixel/np.sqrt(2)),self.nSrc,self.nWvl))
+            rr,radialprofile = FourierUtils.radial_profile(self.PSF[:,:,0,0])
+            self.EncE   = np.zeros((len(radialprofile),self.nSrc,self.nWvl))
         for n in range(self.nSrc):
             for j in range(self.nWvl):
                 if getFWHM == True:
@@ -971,7 +972,7 @@ class fourierModel:
                         
                         
     @timeit
-    def displayResults(self,eewidthIDiamInMas=120,displayContour=False):
+    def displayResults(self,eeRadiusInMas=75,displayContour=False):
         """
         """
         deg2rad = np.pi/180
@@ -1002,7 +1003,7 @@ class fourierModel:
         
            
         if displayContour == True and np.any(self.SR) and self.SR.size > 1:
-            self.displayPsfMetricsContours(eewidthIDiamInMas=eewidthIDiamInMas)
+            self.displayPsfMetricsContours(eeRadiusInMas=eeRadiusInMas)
         else:
             # STREHL-RATIO
             if np.any(self.SR) and self.SR.size > 1:
@@ -1022,7 +1023,7 @@ class fourierModel:
          
             # Ensquared energy
             if np.any(self.EnsqE):
-                nntrue      = eewidthIDiamInMas/self.psInMas
+                nntrue      = eeRadiusInMas/self.psInMas
                 nn2         = int(nntrue)
                 EEmin       = self.EnsqE[nn2,:,0]
                 EEmax       = self.EnsqE[nn2+1,:,0]
@@ -1030,11 +1031,11 @@ class fourierModel:
                 plt.figure()
                 plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.ylabel("{:f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eeRadiusInMas,self.wvlSrc[0]*1e9))
                 plt.show()
 
             if np.any(self.EncE):
-                nntrue      = eewidthIDiamInMas/self.psInMas
+                nntrue      = eeRadiusInMas/self.psInMas
                 nn2         = int(nntrue)
                 EEmin       = self.EncE[nn2,:,0]
                 EEmax       = self.EncE[nn2+1,:,0]
@@ -1042,11 +1043,11 @@ class fourierModel:
                 plt.figure()
                 plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eeRadiusInMas*2,self.wvlSrc[0]*1e9))
                 plt.show()
     
     @timeit            
-    def displayPsfMetricsContours(self,eewidthIDiamInMas=120):
+    def displayPsfMetricsContours(self,eeRadiusInMas=75):
 
         
         # Polar to cartesian
@@ -1081,7 +1082,7 @@ class fourierModel:
         
             # Ensquared Enery
             if np.any(self.EnsqE) and self.EnsqE.shape[1] > 1:
-                nntrue      = eewidthIDiamInMas/self.psInMas
+                nntrue      = eeRadiusInMas/self.psInMas
                 nn2         = int(nntrue)
                 EEmin       = self.EnsqE[nn2,:,0]
                 EEmax       = self.EnsqE[nn2+1,:,0]
@@ -1091,12 +1092,12 @@ class fourierModel:
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eeRadiusInMas*2,self.wvlSrc[0]*1e9))
                 plt.colorbar()
             
             # Encircled Enery
             if np.any(self.EncE) and self.EncE.shape[1] > 1:
-                nntrue      = eewidthIDiamInMas/self.psInMas
+                nntrue      = eeRadiusInMas/self.psInMas
                 nn2         = int(nntrue)
                 EEmin       = self.EncE[nn2,:,0]
                 EEmax       = self.EncE[nn2+1,:,0]
@@ -1106,7 +1107,7 @@ class fourierModel:
                 contours = plt.contour(X, Y, EE, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,EE)
-                plt.title("{:.1f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eewidthIDiamInMas,self.wvlSrc[0]*1e9))
+                plt.title("{:.1f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eeRadiusInMas*2,self.wvlSrc[0]*1e9))
                 plt.colorbar()
         else:
             print('You must define a square grid for PSF evaluations directions - no contours plots avalaible')
