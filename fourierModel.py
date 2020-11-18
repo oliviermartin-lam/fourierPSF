@@ -126,7 +126,7 @@ class fourierModel:
     def nTimes(self):
         """"""
         #return int(np.round(max([self.fovInPixel,2*self.resAO])/self.resAO))
-        return math.ceil(self.fovInPixel/self.resAO)
+        return math.ceil(self.fovInPixel/self.resAO/2)
 
     # CONTRUCTOR
     @timeit
@@ -419,7 +419,7 @@ class fourierModel:
        
         # reconstructor derivation
         i           = complex(0,1)
-        d           = self.pitchs_dm[0]   
+        d           = self.pitchs_wfs[0]   
         Sx          = 2*i*np.pi*self.kx*d
         Sy          = 2*i*np.pi*self.ky*d                        
         Av          = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
@@ -600,8 +600,8 @@ class fourierModel:
         
         
         # Get transfer functions                                        
-        for l in np.arange(0,self.atm.nL):
-            for iTheta in np.arange(0,nTh):
+        for l in range(self.atm.nL):
+            for iTheta in range(nTh):
                 fi      = -vx[l]*self.kx*costh[iTheta] - vy[l]*self.ky*costh[iTheta]
                 idx     = abs(fi) <1e-7;
                 z       = np.exp(-2*i*np.pi*fi*Ts)
@@ -649,45 +649,43 @@ class fourierModel:
         """
         """
         psd = np.zeros((self.resAO,self.resAO))
-        tmp = psd
-        if self.nGs < 2:
-            i  = complex(0,1)
-            d  = self.pitchs_wfs[0]
-            T  = self.samplingTime
-            td = self.latency        
-            vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
-            vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
-            Rx = self.Rx
-            Ry = self.Ry
+        i  = complex(0,1)
+        d  = self.pitchs_wfs[0]
+        T  = self.samplingTime
+        td = self.latency        
+        vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
+        vy = self.atm.wSpeed*np.sin(self.atm.wDir*np.pi/180)
+        weights = self.atm.weights  
+        w = 2*i*np.pi*d;
+
+        if hasattr(self, 'Rx') == False:
+            self.reconstructionFilter()
+        Rx = self.Rx
+        Ry = self.Ry
         
-            if self.loopGain == 0:
-                tf = 1
-            else:
-                tf = self.h1
-                    
-            weights = self.atm.weights
+        if self.loopGain == 0:
+            tf = 1
+        else:
+            tf = self.h1
+            
         
-            w = 2*i*np.pi*d;
-            for mi in np.arange(-self.nTimes,self.nTimes+1):
-                for ni in np.arange(-self.nTimes,self.nTimes+1):
-                    if (mi!=0) | (ni!=0):
-                        km   = self.kx - mi/d
-                        kn   = self.ky - ni/d
-                        PR   = FourierUtils.pistonFilter(self.tel.D,np.hypot(km,kn),fm=mi/d,fn=ni/d)
-                        W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
-                        Q    = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
-                        avr  = 0
+        for mi in range(-self.nTimes,self.nTimes):
+            for ni in range(-self.nTimes,self.nTimes):
+                if (mi!=0) | (ni!=0):
+                    km   = self.kx - mi/d
+                    kn   = self.ky - ni/d
+                    PR   = FourierUtils.pistonFilter(self.tel.D,np.hypot(km,kn),fm=mi/d,fn=ni/d)
+                    W_mn = (abs(km**2 + kn**2) + 1/self.atm.L0**2)**(-11/6)     
+                    Q    = (Rx*w*km + Ry*w*kn) * (np.sinc(d*km)*np.sinc(d*kn))
+                    avr  = 0
                         
-                        for l in np.arange(0,self.atm.nL):
-                            avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
-                            *np.exp(2*i*np.pi*km*vx[l]*td)*np.exp(2*i*np.pi*kn*vy[l]*td)*tf)
+                    for l in range(self.atm.nL):
+                        avr = avr + weights[l]* (np.sinc(km*vx[l]*T)*np.sinc(kn*vy[l]*T)
+                        *np.exp(2*i*np.pi*km*vx[l]*td)*np.exp(2*i*np.pi*kn*vy[l]*td)*tf)
                                                           
-                        tmp = tmp + PR*W_mn * abs(Q*avr)**2
+                    psd = psd + PR*W_mn * abs(Q*avr)**2
                
-            tmp[np.isnan(tmp)] = 0        
-            psd[self.mskIn_]   = tmp[self.mskIn_]
-        
-        return psd*self.atm.r0**(-5/3)*0.0229 
+        return self.mskIn_*psd*self.atm.r0**(-5/3)*0.0229 
     
     @timeit        
     def noisePSD(self):
@@ -747,7 +745,7 @@ class fourierModel:
                 th  = self.src[s].direction - self.gs[0].direction
                 if any(th):
                     A = np.zeros((self.resAO,self.resAO))
-                    for l in np.arange(0,self.atm.nL):                
+                    for l in range(self.atm.nL):                
                         A   = A + Ws[l]*np.exp(2*i*np.pi*Hs[l]*(self.kx*th[0] + self.ky*th[1]))            
                 else:
                     A = np.ones((self.resAO,self.resAO))
@@ -788,7 +786,7 @@ class fourierModel:
             th  = self.src[s].direction - self.gs[0].direction
             if any(th):
                 A = np.zeros((self.resAO,self.resAO))
-                for l in np.arange(0,self.atm.nL):
+                for l in range(self.atm.nL):
                     A   = A + 2*Ws[l]*(1 - np.cos(2*np.pi*Hs[l]*(self.kx*th[0] + self.ky*th[1])))             
                 psd[:,:,s] = A*Watm
         
@@ -856,14 +854,15 @@ class fourierModel:
         
         # Noise
         self.psdNoise           = np.real(self.noisePSD())       
-        # Aliasing
         if self.nGs == 1:
-            self.psdAlias           = np.real(self.aliasingPSD())
-            psd[id1:id2,id1:id2,:]  = np.repeat(self.psdAlias[:, :, np.newaxis], self.nSrc, axis=2)
-            psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + np.repeat(self.psdNoise[:, :, np.newaxis], self.nSrc, axis=2)
+            psd[id1:id2,id1:id2,:]  = np.repeat(self.psdNoise[:, :, np.newaxis], self.nSrc, axis=2)
         else:
-            self.psdAlias           = np.zeros((self.resAO,self.resAO))
             psd[id1:id2,id1:id2,:]  = self.psdNoise
+            
+        # Aliasing
+        self.psdAlias           = np.real(self.aliasingPSD())
+        psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + np.repeat(self.psdAlias[:, :, np.newaxis], self.nSrc, axis=2)
+        
         
         # Add the noise and spatioTemporal PSD
         self.psdSpatioTemporal  = np.real(self.spatioTemporalPSD())
