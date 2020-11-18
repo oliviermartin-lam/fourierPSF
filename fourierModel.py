@@ -119,7 +119,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
-                 ,displayContour=False):
+                 ,displayContour=False, extraPSFsDirections=[]):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -132,7 +132,7 @@ class fourierModel:
         self.calcPSF = calcPSF
         
         # GRAB PARAMETERS
-        self.status = self.parameters(self.file)        
+        self.status = self.parameters(self.file,extraPSFsDirections=extraPSFsDirections)        
         
         if self.status:
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
@@ -180,7 +180,7 @@ class fourierModel:
             self.otfTel         = np.real(fft.fftshift(FourierUtils.fftCorrel(P,P)))
             self.otfTel         = self.otfTel/self.otfTel.max()
         
-        
+           
             # DEFINE THE RECONSTRUCTOR
             wvl                 = self.wvlRef
             self.atm.wvl        = wvl
@@ -227,7 +227,7 @@ class fourierModel:
         
         return s
 
-    def parameters(self,file):
+    def parameters(self,file,extraPSFsDirections=[]):
                     
         tstart = time.time() 
     
@@ -276,6 +276,24 @@ class fourierModel:
         self.wvlRef         = self.wvlSrc.min()
         self.zenithSrc      = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceZenith'])))
         self.azimuthSrc     = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceAzimuth'])))
+        
+        # INCLUDE THE ADDITIONAL PSF EVALUATIONS
+        if np.any(extraPSFsDirections):
+            self.nExtraSrc = len(extraPSFsDirections)
+            tmp = np.zeros(self.nSrc + self.nExtraSrc)
+            tmp[0:self.nSrc-1] = self.zenithSrc
+            self.zenithSrc = tmp
+            tmp = np.zeros(self.nSrc + self.nExtraSrc)
+            tmp[0:self.nSrc-1] = self.azimuthSrc
+            self.azimuthSrc = tmp
+            
+            for j in range(self.nExtraSrc):
+                self.zenithSrc[self.nSrc+j] = extraPSFsDirections[j][0]
+                self.azimuthSrc[self.nSrc+j] = extraPSFsDirections[j][1]
+            
+            self.nSrc = self.nSrc + self.nExtraSrc
+          
+            
         # ----- verification
         self.src = []
         if len(self.zenithSrc) == len(self.azimuthSrc):
