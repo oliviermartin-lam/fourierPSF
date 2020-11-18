@@ -866,7 +866,7 @@ class fourierModel:
        
         # Fitting
         self.psdFit = np.real(self.fittingPSD())
-        psd = np.repeat(self.psdFit[:, :, np.newaxis], self.nSrc, axis=2)
+        psd = psd + np.repeat(self.psdFit[:, :, np.newaxis], self.nSrc, axis=2)
         
         # Return the 3D PSD array in nm^2.m^2
         return psd * (dk * wvl*1e9/2/np.pi)**2
