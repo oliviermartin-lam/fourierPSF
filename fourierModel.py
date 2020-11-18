@@ -108,8 +108,13 @@ class fourierModel:
     # DEPENDANT VARIABLES DEFINITION
     @property
     def kc(self):
-        """DM cut-of frequency"""
+        """Cut-of frequency"""
         return 1/(2*max(self.pitchs_dm.min(),self.pitchs_wfs.min()))
+    
+    @property
+    def kcDM(self):
+        """DM cut-of frequency"""
+        return 1/(2*self.pitchs_dm)
     
     @property
     def kcInMas(self):
@@ -320,15 +325,15 @@ class fourierModel:
             self.Npix_per_subap_HO = int(self.resolution/self.nLenslet_HO)
             self.ND             = self.wvlGs/self.pitchs_wfs*rad2arcsec/self.pixel_Scale_HO #spot FWHM in pixels and without turbulence
             varRON              = np.pi**2/3*(self.sigmaRON_HO /self.nph_HO)**2*(self.Npix_per_subap_HO**2/self.ND)**2
-            if varRON > 3:
+            if varRON.any() > 3:
                 print('The read-out noise variance is very high (%.1f >3 rd^2), there is certainly smth wrong with your inputs, set to 0'%(varRON))
                 varRON = 0
             self.NT             = self.wvlGs/self.r0*(self.wvlGs/self.wvlAtm)**1.2 * rad2arcsec/self.pixel_Scale_HO
             varShot             = np.pi**2/(2*self.nph_HO)*(self.NT/self.ND)**2
-            if varRON > 3:
+            if varShot.any() > 3:
                 print('The shot noise variance is very high (%.1f >3 rd^2), there is certainly smth wrong with your inputs, set to 0'%(varShot))
                 varShot = 0
-            self.noiseVariance  = (self.wvlGs/self.wvlRef)**2 * (varRON + varShot) *np.ones(self.nGs)
+            self.noiseVariance  = (self.wvlGs/self.wvlRef)**2 * (varRON + varShot)
         
         #%% DM parameters
         self.h_dm           = np.array(eval(config['DM']['DmHeights']))
@@ -498,7 +503,7 @@ class fourierModel:
             fx  = theta_x[d_o]*self.kx
             fy  = theta_y[d_o]*self.ky
             for j in range(nDm):                # loop on DM
-                index   = self.kxy <= self.kc[j]
+                index   = self.kxy <= self.kcDM[j]
                 Pdm[index,0,j] = np.exp(i*2*np.pi*self.h_dm[j]*(fx[index]+fy[index]))
             Pdm_t = np.conj(Pdm.transpose(0,1,3,2))
             for l in range(nL):                 #loop on atmosphere layers
@@ -535,7 +540,7 @@ class fourierModel:
             fy = self.src[s].direction[1]*self.ky
             PbetaDM = np.zeros([nK,nK,1,nDm],dtype=complex)
             for j in range(nDm): #loop on DMs
-                index               = self.kxy <= self.kc[j]
+                index               = self.kxy <= self.kcDM[j]
                 PbetaDM[index,0,j]  = np.exp(2*i*np.pi*self.h_dm[j]*(fx[index] + fy[index]))
             self.PbetaDM.append(PbetaDM)
         
@@ -647,7 +652,7 @@ class fourierModel:
         tmp = psd
         if self.nGs < 2:
             i  = complex(0,1)
-            d  = self.pitchs_dm[0]
+            d  = self.pitchs_wfs[0]
             T  = self.samplingTime
             td = self.latency        
             vx = self.atm.wSpeed*np.cos(self.atm.wDir*np.pi/180)
@@ -802,8 +807,8 @@ class fourierModel:
         d       = self.pitchs_dm[0]
         wDir_x  = np.cos(self.wDir*np.pi/180)
         wDir_y  = np.sin(self.wDir*np.pi/180)
-            
-        Beta = [self.srcj.direction[0],self.srcj.direction[1]]
+        s       = 0
+        Beta = [self.src[s].direction[0],self.src[s].direction[1]]
             
         MPalphaL = np.zeros([nK,nK,self.nGs,nH],dtype=complex)
         for h in range(nH):
