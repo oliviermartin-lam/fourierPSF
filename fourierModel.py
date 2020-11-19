@@ -365,6 +365,9 @@ class fourierModel:
             self.psInMas    = lonD/2
           
         self.samp       = lonD/self.psInMas/2
+        if self.samp > 0.98 and self.samp < 1.02:
+            self.samp       = 1
+            
         if self.samp >=1:
             self.fovInPixel = max(self.psf_FoV,round(self.resolution*self.samp*2).astype('int'))
         else:
