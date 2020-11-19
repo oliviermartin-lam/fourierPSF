@@ -122,7 +122,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
-                 ,displayContour=False, extraPSFsDirections=[],kcExt=[]):
+                 ,displayContour=False, extraPSFsDirections=[],kcExt=[],path_pupil='',path_static=''):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -136,7 +136,7 @@ class fourierModel:
         self.kcExt   = np.array(kcExt)
         
         # GRAB PARAMETERS
-        self.status = self.parameters(self.file,extraPSFsDirections=extraPSFsDirections)        
+        self.status = self.parameters(self.file,extraPSFsDirections=extraPSFsDirections,path_pupil=path_pupil,path_static=path_static)        
         
         if self.status:
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
@@ -231,7 +231,7 @@ class fourierModel:
         
         return s
 
-    def parameters(self,file,extraPSFsDirections=[]):
+    def parameters(self,file,extraPSFsDirections=[],path_pupil='',path_static=''):
                     
         tstart = time.time() 
     
@@ -251,8 +251,14 @@ class fourierModel:
         self.zenith_angle   = eval(config['telescope']['zenithAngle'])
         self.obsRatio       = eval(config['telescope']['obscurationRatio'])
         self.resolution     = eval(config['telescope']['resolution'])
-        self.path_pupil     = eval(config['telescope']['path_pupil'])
-        self.path_static    = eval(config['telescope']['path_static'])
+        if path_pupil == '':
+            self.path_pupil     = eval(config['telescope']['path_pupil'])
+        else:
+            self.path_pupil = path_pupil
+        if path_static == '':
+            self.path_static    = eval(config['telescope']['path_static'])
+        else:
+            self.path_static = path_static
         
         #%% Atmosphere
         rad2arcsec          = 3600*180/np.pi 
