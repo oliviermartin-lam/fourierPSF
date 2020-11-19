@@ -340,6 +340,9 @@ class fourierModel:
             if varRON.any() > 3:
                 print('The read-out noise variance is very high (%.1f >3 rd^2), there is certainly smth wrong with your inputs, set to 0'%(varRON))
                 varRON = 0
+                if self.pixel_Scale_HO > 1: # put the value in arcsec
+                    self.pixel_Scale_HO = self.pixel_Scale_HO/1e3
+                    
             self.NT             = self.wvlGs/self.r0*(self.wvlGs/self.wvlAtm)**1.2 * rad2arcsec/self.pixel_Scale_HO
             varShot             = np.pi**2/(2*self.nph_HO)*(self.NT/self.ND)**2
             if varShot.any() > 3:
