@@ -97,7 +97,10 @@ class fourierModel:
     @property
     def kc(self):
         """Cut-of frequency"""
-        return 1/(2*max(self.pitchs_dm.min(),self.pitchs_wfs.min()))
+        if self.kcExt.any():
+            return self.kcExt
+        else:
+            return 1/(2*max(self.pitchs_dm.min(),self.pitchs_wfs.min()))
     
     @property
     def kcDM(self):
@@ -119,7 +122,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
-                 ,displayContour=False, extraPSFsDirections=[]):
+                 ,displayContour=False, extraPSFsDirections=[],kcExt=[]):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -130,6 +133,7 @@ class fourierModel:
         self.getErrorBreakDown = getErrorBreakDown
         self.getPSFmetrics = getFWHM or getEnsquaredEnergy or getEncircledEnergy
         self.calcPSF = calcPSF
+        self.kcExt   = np.array(kcExt)
         
         # GRAB PARAMETERS
         self.status = self.parameters(self.file,extraPSFsDirections=extraPSFsDirections)        
