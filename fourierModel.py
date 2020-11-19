@@ -369,9 +369,9 @@ class fourierModel:
             self.samp   = 1.0
             
         if self.samp >=1:
-            self.fovInPixel = max(self.psf_FoV,round(self.resolution*self.samp*2).astype('int'))
+            self.fovInPixel = int(max(self.psf_FoV,round(self.resolution*self.samp*2)))
         else:
-            self.fovInPixel = max(self.psf_FoV,round(2*self.resolution/self.samp).astype('int'))
+            self.fovInPixel = int(max(self.psf_FoV,round(2*self.resolution/self.samp)))
         
         if self.verbose:
             print('.Field of view:\t\t%4.2f arcsec\n.Pixel scale:\t\t%4.2f mas\n.Over-sampling:\t\t%4.2f'%(self.fovInPixel*self.psInMas/1e3,self.psInMas,self.samp))
