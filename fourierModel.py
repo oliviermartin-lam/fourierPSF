@@ -120,9 +120,9 @@ class fourierModel:
         return min(2,math.ceil(self.fovInPixel/self.resAO/2))
 
     # CONTRUCTOR
-    def __init__(self,file,calcPSF=True,verbose=False,display=True,aoFilter='circle',\
-                 getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False\
-                 ,displayContour=False, extraPSFsDirections=[],kcExt=[],path_pupil='',path_static=''):
+    def __init__(self,file,calcPSF=True,verbose=False,display=True,displayContour=False,aoFilter='circle',\
+                 getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False,\
+                 extraPSFsDirections=[],cartPointingCoords=[],kcExt=[],path_pupil='',path_static=''):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -136,7 +136,9 @@ class fourierModel:
         self.kcExt   = np.array(kcExt)
         
         # GRAB PARAMETERS
-        self.status = self.parameters(self.file,extraPSFsDirections=extraPSFsDirections,path_pupil=path_pupil,path_static=path_static)        
+        self.status = self.parameters(self.file,cartPointingCoords=cartPointingCoords,\
+                                      extraPSFsDirections=extraPSFsDirections,\
+                                      path_pupil=path_pupil,path_static=path_static)        
         
         if self.status:
             # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
@@ -231,7 +233,7 @@ class fourierModel:
         
         return s
 
-    def parameters(self,file,extraPSFsDirections=[],path_pupil='',path_static=''):
+    def parameters(self,file,extraPSFsDirections=[],cartPointingCoords=[],path_pupil='',path_static=''):
                     
         tstart = time.time() 
     
@@ -284,18 +286,24 @@ class fourierModel:
         self.wvlSrc         = np.unique(np.array(eval(config['PSF_DIRECTIONS']['ScienceWavelength'])))
         self.nWvl           = self.wvlSrc.size
         self.wvlRef         = self.wvlSrc.min()
-        self.zenithSrc      = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceZenith'])))
-        self.azimuthSrc     = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceAzimuth'])))
+        if np.any(cartPointingCoords):
+            x               = cartPointingCoords[:,0]
+            y               = cartPointingCoords[:,1]
+            self.zenithSrc  = np.hypot(x,y)
+            self.azimuthSrc = 180/np.pi * np.arctan2(y,x)
+        else:
+            self.zenithSrc      = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceZenith'])))
+            self.azimuthSrc     = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceAzimuth'])))
         
         # INCLUDE THE ADDITIONAL PSF EVALUATIONS
         if np.any(extraPSFsDirections):
-            self.nExtraSrc = len(extraPSFsDirections)
-            tmp = np.zeros(self.nSrc + self.nExtraSrc)
-            tmp[0:self.nSrc-1] = self.zenithSrc
-            self.zenithSrc = tmp
-            tmp = np.zeros(self.nSrc + self.nExtraSrc)
-            tmp[0:self.nSrc-1] = self.azimuthSrc
-            self.azimuthSrc = tmp
+            self.nExtraSrc      = len(extraPSFsDirections)
+            tmp                 = np.zeros(self.nSrc + self.nExtraSrc)
+            tmp[0:self.nSrc-1]  = self.zenithSrc
+            self.zenithSrc      = tmp
+            tmp                 = np.zeros(self.nSrc + self.nExtraSrc)
+            tmp[0:self.nSrc-1]  = self.azimuthSrc
+            self.azimuthSrc     = tmp
             
             for j in range(self.nExtraSrc):
                 self.zenithSrc[self.nSrc+j] = extraPSFsDirections[j][0]
@@ -1194,7 +1202,7 @@ class fourierModel:
             print("Required time for reconstructors init (ms)\t : {:f}".format(self.t_reconstructor))
         else:
             print("Required time for optimization init (ms)\t : {:f}".format(self.t_finalReconstructor))
-            print("Required time for tomography init (ms)\t : {:f}".format(self.t_tomo))
+            print("Required time for tomography init (ms)\t\t : {:f}".format(self.t_tomo))
             print("Required time for optimization init (ms)\t : {:f}".format(self.t_opt))
         # Controller
         print("Required time for controller instantiation (ms)\t : {:f}".format(self.t_controller))
@@ -1215,5 +1223,5 @@ class fourierModel:
             print("Required time for get PSF metrics (ms)\t\t : {:f}".format(self.t_getPsfMetrics))
         
         # Display
-        if self.display:
+        if self.display and self.calcPSF:
             print("Required time for displaying figures (ms)\t : {:f}".format(self.t_displayResults))
