@@ -122,7 +122,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,displayContour=False,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False,\
-                 extraPSFsDirections=[],cartPointingCoords=[],kcExt=[],path_pupil='',path_static=''):
+                 extraPSFsDirections=None,cartPointingCoords=None,kcExt=None,path_pupil='',path_static=''):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -233,7 +233,7 @@ class fourierModel:
         
         return s
 
-    def parameters(self,file,extraPSFsDirections=[],cartPointingCoords=[],path_pupil='',path_static=''):
+    def parameters(self,file,extraPSFsDirections=None,cartPointingCoords=None,path_pupil='',path_static=''):
                     
         tstart = time.time() 
     
@@ -286,7 +286,7 @@ class fourierModel:
         self.wvlSrc         = np.unique(np.array(eval(config['PSF_DIRECTIONS']['ScienceWavelength'])))
         self.nWvl           = self.wvlSrc.size
         self.wvlRef         = self.wvlSrc.min()
-        if np.any(cartPointingCoords):
+        if cartPointingCoords is not None:
             x               = cartPointingCoords[:,0]
             y               = cartPointingCoords[:,1]
             self.zenithSrc  = np.hypot(x,y)
@@ -296,7 +296,7 @@ class fourierModel:
             self.azimuthSrc     = np.array(np.array(eval(config['PSF_DIRECTIONS']['ScienceAzimuth'])))
         
         # INCLUDE THE ADDITIONAL PSF EVALUATIONS
-        if np.any(extraPSFsDirections):
+        if extraPSFsDirections is not None:
             self.nExtraSrc      = len(extraPSFsDirections)
             tmp                 = np.zeros(self.nSrc + self.nExtraSrc)
             tmp[0:self.nSrc-1]  = self.zenithSrc
