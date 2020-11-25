@@ -287,6 +287,7 @@ class fourierModel:
         self.nWvl           = self.wvlSrc.size
         self.wvlRef         = self.wvlSrc.min()
         if cartPointingCoords is not None:
+            self.nSrc       =  cartPointingCoords.shape[0]
             x               = cartPointingCoords[:,0]
             y               = cartPointingCoords[:,1]
             self.zenithSrc  = np.hypot(x,y)
@@ -299,10 +300,10 @@ class fourierModel:
         if extraPSFsDirections is not None:
             self.nExtraSrc      = len(extraPSFsDirections)
             tmp                 = np.zeros(self.nSrc + self.nExtraSrc)
-            tmp[0:self.nSrc-1]  = self.zenithSrc
+            tmp[0:self.nSrc]    = self.zenithSrc
             self.zenithSrc      = tmp
             tmp                 = np.zeros(self.nSrc + self.nExtraSrc)
-            tmp[0:self.nSrc-1]  = self.azimuthSrc
+            tmp[0:self.nSrc]    = self.azimuthSrc
             self.azimuthSrc     = tmp
             
             for j in range(self.nExtraSrc):
