@@ -143,20 +143,20 @@ class fourierModel:
                                       path_pupil=path_pupil,path_static=path_static)        
         
         if self.status:
-            # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND
-            kx = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
-            ky = self.resAO*self.PSDstep*fft.fftshift(fft.fftfreq(self.resAO)) + 1e-10
-            self.kx,self.ky = np.meshgrid(kx,ky)
-            self.kxy        = np.hypot(self.kx,self.ky)    
+            # DEFINE THE FREQUENCY VECTORS WITHIN THE AO CORRECTION BAND           
+            k2D       = np.mgrid[0:self.resAO, 0:self.resAO].astype(float)
+            self.kx  = self.PSDstep*(k2D[0] - self.resAO//2)  +1e-10
+            self.ky  = self.PSDstep*(k2D[1] - self.resAO//2) + 1e-10    
+            self.kxy = np.hypot(self.kx,self.ky)    
             
             # DEFINE THE PISTON FILTER FOR LOW-ORDER FREQUENCIES
             self.pistonFilterIn_ = FourierUtils.pistonFilter(self.tel.D,self.kxy)
             
             # DEFINE THE FREQUENCY DOMAIN OVER THE FULL PSD DOMAIN
-            kxExt           = self.fovInPixel*self.PSDstep*fft.fftshift(fft.fftfreq(self.fovInPixel))
-            kyExt           = self.fovInPixel*self.PSDstep*fft.fftshift(fft.fftfreq(self.fovInPixel))
-            self.kxExt,self.kyExt = np.meshgrid(kxExt,kyExt)
-            self.kExtxy     = np.hypot(self.kxExt,self.kyExt)           
+            k2D = np.mgrid[0:self.fovInPixel, 0:self.fovInPixel].astype(float)
+            self.kxExt      = self.PSDstep*(k2D[0] - self.fovInPixel//2)
+            self.kyExt      = self.PSDstep*(k2D[1] - self.fovInPixel//2)
+            self.kExtxy     = np.hypot(self.kxExt,self.kyExt)    
             
             # DEFINE THE AO CORRECTION and PSF HALO  REGIONS
             if aoFilter == 'circle':
@@ -595,8 +595,8 @@ class fourierModel:
                 Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
                 fx = Alpha[0]*self.kx
                 fy = Alpha[1]*self.ky
-                self.MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])*\
-                    np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
+                self.MPalphaL[:,:,g,h] = www*2*i*np.pi*self.kxy*np.sinc(d*self.kx)*\
+                    np.sinc(d*self.ky)*np.exp(i*2*np.pi*Hs[h]*(fx+fy))
             
         self.Walpha = np.matmul(self.W,self.MPalphaL)
         self.t_finalReconstructor = 1000*(time.time() - tstart)
@@ -741,7 +741,7 @@ class fourierModel:
                     psd = psd + PR*W_mn * abs(Q*avr)**2
         
         self.t_aliasingPSD = 1000*(time.time() - tstart)
-        return self.mskIn_*psd*self.atm.r0**(-5/3)*0.0229 
+        return self.mskIn_ * psd*self.atm.r0**(-5/3)*0.0229 
     
     def noisePSD(self):
         """NOISEPSD Noise error power spectrum density
@@ -762,7 +762,7 @@ class fourierModel:
                     psd[:,:,j] = self.mskIn_ * tmp[:,:,0,0]*self.pistonFilterIn_
         
         self.t_noisePSD = 1000*(time.time() - tstart)
-        return psd*self.noiseGain
+        return  psd*self.noiseGain
     
     def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
@@ -773,14 +773,14 @@ class fourierModel:
             self.reconstructionFilter()
 
         F = self.Rx*self.SxAv+ self.Ry*self.SyAv     
-        Watm = self.mskIn_ * self.Wphi * self.pistonFilterIn_       
+        Watm = self.Wphi * self.pistonFilterIn_       
         if (self.loopGain == 0):
             psd = abs(1-F)**2*Watm
         else:
             psd = (1 + abs(F)**2*self.h2 - 2*np.real(F*self.h1))*Watm
         
         self.t_servoLagPSD = 1000*(time.time() - tstart)
-        return psd
+        return self.mskIn_ * psd
     
     def spatioTemporalPSD(self):
         """%% SPATIOTEMPORALPSD Power spectrum density including reconstruction, field variations and temporal effects
@@ -794,7 +794,7 @@ class fourierModel:
         nK  = self.resAO
         deltaT  = self.latency+self.samplingTime
         
-        Watm = self.mskIn_ * self.Wphi * self.pistonFilterIn_      
+        Watm = self.Wphi * self.pistonFilterIn_      
         F = self.Rx*self.SxAv + self.Ry*self.SyAv
         
         for s in range(self.nSrc):
@@ -810,7 +810,7 @@ class fourierModel:
                 if (self.loopGain == 0):  
                     psd[:,:,s] = abs(1-F)**2*Watm
                 else:
-                    psd[:,:,s] = (1 + abs(F)**2*self.h2- 2*np.real(F*self.h1*A))*Watm                   
+                    psd[:,:,s] = self.mskIn_ * (1 + abs(F)**2*self.h2- 2*np.real(F*self.h1*A))*Watm                   
             else:    
                 # tomographic case
                 Beta = [self.src[s].direction[0],self.src[s].direction[1]]
@@ -818,14 +818,15 @@ class fourierModel:
                 fx = Beta[0]*self.kx
                 fy = Beta[1]*self.ky
                 for j in range(nH):
-                    PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
-                          (fx[self.mskIn_]+fy[self.mskIn_]) -  deltaT*self.wSpeed[j]\
-                          *(self.wDir_x[j]*self.kx[self.mskIn_] + self.wDir_y[j]*self.ky[self.mskIn_]) ))
-  
+                    PbetaL[:,:,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
+                          (fx+fy) -  deltaT*self.wSpeed[j]\
+                          *(self.wDir_x[j]*self.kx+ self.wDir_y[j]*self.ky)))
+   
+
                 proj    = PbetaL - np.matmul(self.PbetaDM[s],self.Walpha)            
                 proj_t  = np.conj(proj.transpose(0,1,3,2))
                 tmp     = np.matmul(proj,np.matmul(self.Cphi,proj_t))
-                psd[:,:,s] = tmp[:,:,0,0]*self.pistonFilterIn_
+                psd[:,:,s] = self.mskIn_ * tmp[:,:,0,0]*self.pistonFilterIn_
         self.t_spatioTemporalPSD = 1000*(time.time() - tstart)
         return psd
     
@@ -836,7 +837,7 @@ class fourierModel:
         psd = np.zeros((self.resAO,self.resAO,self.nSrc))
         Hs = self.atm.heights
         Ws = self.atm.weights
-        Watm = self.mskIn_ * self.Wphi * self.pistonFilterIn_       
+        Watm = self.Wphi * self.pistonFilterIn_       
         
         for s in range(self.nSrc):
             th  = self.src[s].direction - self.gs[0].direction
@@ -846,7 +847,7 @@ class fourierModel:
                     A   = A + 2*Ws[l]*(1 - np.cos(2*np.pi*Hs[l]*(self.kx*th[0] + self.ky*th[1])))             
                 psd[:,:,s] = A*Watm
         self.t_anisoplanatismPSD = 1000*(time.time() - tstart)
-        return np.real(psd)
+        return self.mskIn_ * np.real(psd)
     
     def tomographyPSD(self):
         """%% TOMOGRAPHYPSD Tomographic error power spectrum density
@@ -871,16 +872,16 @@ class fourierModel:
                 Alpha = [self.gs[g].direction[0],self.gs[g].direction[1]]
                 fx = Alpha[0]*self.kx
                 fy = Alpha[1]*self.ky
-                MPalphaL[self.mskIn_,g,h] = www[self.mskIn_]*2*i*np.pi*self.kxy[self.mskIn_]*np.sinc(d*self.kx[self.mskIn_])\
-                *np.sinc(d*self.ky[self.mskIn_])*np.exp(i*2*np.pi*Hs[h]*(fx[self.mskIn_]+fy[self.mskIn_]))
+                MPalphaL[:,:,g,h] = www*2*i*np.pi*self.kxy*np.sinc(d*self.kx)\
+                *np.sinc(d*self.ky)*np.exp(i*2*np.pi*Hs[h]*(fx+fy))
             
         PbetaL = np.zeros([nK,nK,1,nH],dtype=complex)
         fx = Beta[0]*self.kx
         fy = Beta[1]*self.ky
         for j in range(nH):
-            PbetaL[self.mskIn_,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
-                  (fx[self.mskIn_]+fy[self.mskIn_]) -  \
-                  deltaT*self.wSpeed[j]*(wDir_x[j]*self.kx[self.mskIn_] + wDir_y[j]*self.ky[self.mskIn_]) ))
+            PbetaL[:,:,0,j] = np.exp(i*2*np.pi*( Hs[j]*\
+                  (fx+fy) -  \
+                  deltaT*self.wSpeed[j]*(wDir_x[j]*self.kx + wDir_y[j]*self.ky) ))
             
         W       = self.W
         Cphi    = self.Cphi # PSD obtained from the true atmosphere
@@ -889,7 +890,7 @@ class fourierModel:
         proj    = PbetaL - np.matmul(W,MPalphaL)           
         proj_t  = np.conj(proj.transpose(0,1,3,2))
         psd     = np.matmul(proj,np.matmul(Cphi,proj_t))
-        psd     = psd[:,:,0,0]
+        psd     = self.mskIn_ * psd[:,:,0,0]
         self.t_tomographyPSD = 1000*(time.time() - tstart)
         return psd*self.pistonFilterIn_
     
@@ -904,8 +905,8 @@ class fourierModel:
         dk              = 2*self.kc/self.resAO
         psd = np.zeros((self.fovInPixel,self.fovInPixel,self.nSrc))
         # AO correction area
-        id1 = np.floor(self.fovInPixel/2 - self.resAO/2).astype(int)
-        id2 = np.floor(self.fovInPixel/2 + self.resAO/2).astype(int)
+        id1 = np.ceil(self.fovInPixel/2 - self.resAO/2).astype(int)
+        id2 = np.ceil(self.fovInPixel/2 + self.resAO/2).astype(int)
         
         # Noise
         self.psdNoise           = np.real(self.noisePSD())       
