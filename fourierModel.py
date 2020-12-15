@@ -122,7 +122,7 @@ class fourierModel:
     # CONTRUCTOR
     def __init__(self,file,calcPSF=True,verbose=False,display=True,displayContour=False,aoFilter='circle',\
                  getErrorBreakDown=False,getFWHM=False,getEnsquaredEnergy=False,getEncircledEnergy=False,\
-                 extraPSFsDirections=None,cartPointingCoords=None,kcExt=None,path_pupil='',path_static=''):
+                 extraPSFsDirections=None,cartPointingCoords=None,kcExt=None,overSampling=1,pitchScaling=1,path_pupil='',path_static=''):
         
         tstart = time.time()
         # PARSING INPUTS
@@ -132,8 +132,10 @@ class fourierModel:
         self.display = display
         self.getErrorBreakDown = getErrorBreakDown
         self.getPSFmetrics = getFWHM or getEnsquaredEnergy or getEncircledEnergy
-        self.calcPSF = calcPSF
-        self.kcExt   = np.array(kcExt)
+        self.calcPSF       = calcPSF
+        self.kcExt         = np.array(kcExt)
+        self.pitchScaling  = pitchScaling
+        self.overSampling  = overSampling
         
         # GRAB PARAMETERS
         self.status = self.parameters(self.file,cartPointingCoords=cartPointingCoords,\
@@ -252,7 +254,7 @@ class fourierModel:
         self.D              = eval(config['telescope']['TelescopeDiameter'])
         self.zenith_angle   = eval(config['telescope']['zenithAngle'])
         self.obsRatio       = eval(config['telescope']['obscurationRatio'])
-        self.resolution     = eval(config['telescope']['resolution'])
+        self.resolution     = eval(config['telescope']['resolution']) * self.overSampling
         if path_pupil == '':
             self.path_pupil     = eval(config['telescope']['path_pupil'])
         else:
@@ -287,7 +289,7 @@ class fourierModel:
         self.nWvl           = self.wvlSrc.size
         self.wvlRef         = self.wvlSrc.min()
         if cartPointingCoords is not None:
-            self.nSrc       =  cartPointingCoords.shape[0]
+            self.nSrc       = cartPointingCoords.shape[0]
             x               = cartPointingCoords[:,0]
             y               = cartPointingCoords[:,1]
             self.zenithSrc  = np.hypot(x,y)
@@ -371,7 +373,7 @@ class fourierModel:
         
         #%% DM parameters
         self.h_dm           = np.array(eval(config['DM']['DmHeights']))
-        self.pitchs_dm      = np.array(eval(config['DM']['DmPitchs']))
+        self.pitchs_dm      = self.pitchScaling*np.array(eval(config['DM']['DmPitchs']))
         self.zenithOpt      = np.array(eval(config['DM']['OptimizationZenith']))
         self.azimuthOpt     = np.array(eval(config['DM']['OptimizationAzimuth']))
         self.weightOpt      = np.array(eval(config['DM']['OptimizationWeight']))
@@ -1002,15 +1004,16 @@ class fourierModel:
         
                 
         # GET THE AO RESIDUAL PHASE STRUCTURE FUNCTION    
-        #t1 = time.time()
         cov = fft.fftshift(fft.fftn(fft.fftshift(self.PSD,axes=(0,1)),axes=(0,1)),axes=(0,1))
         sf  = (2*cov.max(axis=(0,1)) - cov - np.conj(cov))
-
+        #idx1= self.fovInPixel - self.fovInPixel//2
+        #idx2= self.fovInPixel + self.fovInPixel//2
         
         # LOOP ON WAVELENGTHS   
         for j in range(self.nWvl):
             # GET THE AO RESIDUAL OTF
-            otfTot      = fft.fftshift(np.exp(-0.5*sf*(2*np.pi*1e-9/self.wvlSrc[j])**2) * kernel,axes=(0,1))
+            otfTurb     = np.exp(-0.5*sf*(2*np.pi*1e-9/self.wvlSrc[j])**2)
+            otfTot      = fft.fftshift(otfTurb * kernel,axes=(0,1))
             self.SR[:,j]= 1e2*np.abs(otfTot).sum(axis=(0,1))/S
             
             # GET THE FINAL PSF
@@ -1020,6 +1023,11 @@ class fourierModel:
             else:
                 self.PSF[:,:,:,j] = psf           
 
+        if self.overSampling > 1:
+            idx1 = self.fovInPixel//2 - self.fovInPixel//2//self.overSampling
+            idx2 = self.fovInPixel//2 + self.fovInPixel//2//self.overSampling
+            self.PSF = self.PSF[idx1:idx2,idx1:idx2,:,:]
+            
         # GET THE WAVE FRONT ERROR BREAKDOWN
         if getErrorBreakDown == True:
             self.errorBreakDown()                

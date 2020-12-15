@@ -58,7 +58,7 @@ class telescope:
         self.resolution= resolution # In pixels
         self.verbose   = verbose
         self.file      = file
-        # PUPIL DEFINITION
+        # PUPIL DEFINITION        
         import os.path as ospath
         if file!=[] and ospath.isfile(file) == True:
             self.verb = True
