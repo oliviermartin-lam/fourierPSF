@@ -10,7 +10,7 @@ import scipy.special as spc
 import numpy.fft as fft
 import matplotlib.pyplot as plt
 from astropy.modeling import models, fitting
-
+import matplotlib as mpl
 #%%  FOURIER TOOLS
 
 def cov2sf(cov):
@@ -640,6 +640,7 @@ def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_gu
         theta   = 0
     elif method == 'contour':
         # Contour approach~: something wrong about the ellipse orientation
+        mpl.interactive(False)
         fig     = plt.figure()
         C       = plt.contour(im_hr,levels=[im_hr.max()/2])
         plt.close(fig)
@@ -662,6 +663,7 @@ def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_gu
         xm      = wx[wr.argmax()]
         ym      = wy[wr.argmax()]
         theta   = np.mean(180*np.arctan2(ym,xm)/np.pi)
+        mpl.interactive(True)
     elif method == 'gaussian':
         # Prepare array r with radius in arcseconds
         y, x = np.indices(psf.shape, dtype=float)
