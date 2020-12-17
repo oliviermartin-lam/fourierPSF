@@ -1103,9 +1103,9 @@ class fourierModel:
             # FWHM
             if np.any(self.FWHM) and self.FWHM.size > 1:
                 plt.figure()
-                plt.plot(self.zenithSrc,np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),'bo',markersize=10)
+                plt.plot(self.zenithSrc,0.5*(self.FWHM[0,:,0]+self.FWHM[1,:,0]),'bo',markersize=10)
                 plt.xlabel("Off-axis distance")
-                plt.ylabel("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
+                plt.ylabel("Mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
                 plt.show()
          
             # Ensquared energy
@@ -1160,12 +1160,12 @@ class fourierModel:
         
             # FWHM
             if np.any(self.FWHM) and self.FWHM.size > 1:
-                FWHM = np.reshape(np.hypot(self.FWHM[0,:,0],self.FWHM[1,:,0]),(nn,nn))
+                FWHM = np.reshape(0.5*(self.FWHM[0,:,0] + self.FWHM[1,:,0]),(nn,nn))
                 plt.figure()
                 contours = plt.contour(X, Y, FWHM, nIntervals, colors='black')
                 plt.clabel(contours, inline=True,fmt='%1.1f')
                 plt.contourf(X,Y,FWHM)
-                plt.title("Geometrical-mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
+                plt.title("Mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
                 plt.colorbar()
         
             # Ensquared Enery
