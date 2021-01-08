@@ -158,15 +158,7 @@ class fourierModel:
             self.kyExt      = self.PSDstep*(k2D[1] - self.fovInPixel//2)
             self.kExtxy     = np.hypot(self.kxExt,self.kyExt)    
             
-            # DEFINE THE AO CORRECTION and PSF HALO  REGIONS
-            if aoFilter == 'circle':
-                self.mskIn_  = self.kxy  <= self.kc      
-                self.mskOut_ = np.hypot(self.kxExt,self.kyExt) > self.kc
-            else:
-                self.mskIn_  = (abs(self.kx) <= self.kc) | (abs(self.ky) <= self.kc)    
-                self.mskOut_ = (abs(self.kxExt)>self.kc) | (abs(self.kyExt)>self.kc)         
-            
-            # DEFINE NOISE AND ATMOSPHERE PSD
+             # DEFINE NOISE AND ATMOSPHERE PSD
             self.Wn   = np.mean(self.noiseVariance)/(2*self.kc)**2
             self.Wphi = self.atm.spectrum(self.kxy);
             
@@ -187,19 +179,6 @@ class fourierModel:
             
             self.otfTel         = np.real(fft.fftshift(FourierUtils.fftCorrel(P,P)))
             self.otfTel         = self.otfTel/self.otfTel.max()
-        
-           
-            # DEFINE THE RECONSTRUCTOR
-            wvl                 = self.wvlRef
-            self.atm.wvl        = wvl
-            self.atm_mod.wvl    = wvl
-            if self.nGs <2:
-                self.reconstructionFilter()
-            else:
-                self.finalReconstructor()
-            
-            # DEFINE THE CONTROLLER
-            self.controller()
             
             
             # INIT OUTPUTS
@@ -209,20 +188,46 @@ class fourierModel:
             self.FWHM= []
             self.EncE= []
             self.EnsqE= []
- 
-            if calcPSF:
-                self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown,\
-                            getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy)
-                if display:
-                    self.displayResults(displayContour=displayContour)
+     
+            # ----------------- OPEN-LOOP CASE ---------------------------- #
+            if self.loopGain == 0:
+                self.getPSF(verbose=verbose,getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,\
+                                getEncircledEnergy=getEncircledEnergy)
+                    
             else:
-                self.psd = self.powerSpectrumDensity()
+            # ----------------- CLOSED-LOOP CASE ---------------------------- #
+                # DEFINE THE AO CORRECTION and PSF HALO  REGIONS
+                if aoFilter == 'circle':
+                    self.mskIn_  = self.kxy  <= self.kc      
+                    self.mskOut_ = np.hypot(self.kxExt,self.kyExt) > self.kc
+                else:
+                    self.mskIn_  = (abs(self.kx) <= self.kc) | (abs(self.ky) <= self.kc)    
+                    self.mskOut_ = (abs(self.kxExt)>self.kc) | (abs(self.kyExt)>self.kc)         
                 
-            self.t_init = 1000*(time.time()  - tstart)
+                # DEFINE THE RECONSTRUCTOR
+                wvl                 = self.wvlRef
+                self.atm.wvl        = wvl
+                self.atm_mod.wvl    = wvl
+                if self.nGs <2:
+                    self.reconstructionFilter()
+                else:
+                    self.finalReconstructor()
+                
+                # DEFINE THE CONTROLLER
+                self.controller()
+                
+                if calcPSF:
+                    self.getPSF(verbose=verbose,getErrorBreakDown=getErrorBreakDown,\
+                                getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy)
+                    if display:
+                        self.displayResults(displayContour=displayContour)
+                else:
+                    self.psd = self.powerSpectrumDensity()
+                    
+                if verbose:
+                    self.displayExecutionTime()
             
-            if verbose:
-                self.displayExecutionTime()
-            
+        self.t_init = 1000*(time.time()  - tstart)
           
     def __repr__(self):
         s = "Fourier Model class "
@@ -898,10 +903,6 @@ class fourierModel:
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
         tstart  = time.time()
-        # Manage the wavelength/sampling
-        wvl             = self.wvlRef
-        self.atm.wvl    = wvl
-        self.atm_mod.wvl= wvl
         dk              = 2*self.kc/self.resAO
         psd = np.zeros((self.fovInPixel,self.fovInPixel,self.nSrc))
         # AO correction area
@@ -930,7 +931,7 @@ class fourierModel:
         
         # Return the 3D PSD array in nm^2.m^2
         self.t_powerSpectrumDensity = 1000*(time.time() - tstart)
-        return psd * (dk * wvl*1e9/2/np.pi)**2
+        return psd * (dk * self.atm.wvl*1e9/2/np.pi)**2
     
     def errorBreakDown(self):
         """
@@ -982,60 +983,88 @@ class fourierModel:
         if not self.status:
             print("The fourier Model class must be instantiated first\n")
             return 0,0
-        
-        # GET THE AO RESIDUAL PSD/SF
-        self.PSD   = self.powerSpectrumDensity() 
-        
         tstart  = time.time()
-        self.PSF = np.zeros((self.fovInPixel,self.fovInPixel,self.nSrc,self.nWvl))
-        self.SR  = np.zeros((self.nSrc,self.nWvl))
+        # GET THE AO RESIDUAL PSD/SF
+        # Manage the wavelength/sampling
+        wvl             = self.wvlRef
+        self.atm.wvl    = wvl
+        self.atm_mod.wvl= wvl
         
-        # DEFINE THE FFT PHASOR AND MULTIPLY TO THE TELESCOPE OTF
-        if fftphasor:
-             # FOURIER PHASOR
-             uu =  fft.fftshift(fft.fftfreq(self.fovInPixel))  
-             ux,uy = np.meshgrid(uu,uu)
-             self.fftPhasor = np.exp(-complex(0,1)*np.pi*(ux + uy))
-        else:
-             self.fftPhasor = 1
-        kernel = self.otfTel * self.fftPhasor      
-        kernel = np.repeat(kernel[:,:,np.newaxis],self.nSrc,axis=2)     
-        S     = self.otfTel.sum()
-        
-        
-                
-        # GET THE AO RESIDUAL PHASE STRUCTURE FUNCTION    
-        cov = fft.fftshift(fft.fftn(fft.fftshift(self.PSD,axes=(0,1)),axes=(0,1)),axes=(0,1))
-        sf  = (2*cov.max(axis=(0,1)) - cov - np.conj(cov))
-        #idx1= self.fovInPixel - self.fovInPixel//2
-        #idx2= self.fovInPixel + self.fovInPixel//2
-        
-        # LOOP ON WAVELENGTHS   
-        for j in range(self.nWvl):
-            # GET THE AO RESIDUAL OTF
-            otfTurb     = np.exp(-0.5*sf*(2*np.pi*1e-9/self.wvlSrc[j])**2)
-            otfTot      = fft.fftshift(otfTurb * kernel,axes=(0,1))
-            self.SR[:,j]= 1e2*np.abs(otfTot).sum(axis=(0,1))/S
+        if self.loopGain == 0: #open-loop-case
             
-            # GET THE FINAL PSF
-            psf = np.real(fft.fftshift(fft.ifftn(otfTot,axes=(0,1)),axes = (0,1)))
+            # Von-Kármánn PSD
+            self.PSD = self.atm.spectrum(self.kExtxy) * FourierUtils.pistonFilter(self.tel.D,self.kExtxy) * (2*self.kc/self.resAO)**2 
+            cov      = fft.fftshift(fft.fft2(fft.fftshift(self.PSD)))
+            sf       = (2*cov.max() - cov - np.conj(cov))
+            otfTurb  = np.exp(-0.5*sf)
+            otfTot   = otfTurb * self.otfTel
+            self.SR  = 1e2*np.abs(otfTot).sum(axis=(0,1))/self.otfTel.sum()
+            # PSF
+            psf      = np.real(fft.fftshift(fft.ifft2(fft.fftshift(otfTot))))
+            
             if self.samp <1:
-                self.PSF[:,:,:,j] = FourierUtils.interpolateSupport(psf,round(self.resolution*2*self.samp).astype('int'))
+                self.PSF = FourierUtils.interpolateSupport(psf,int(round(self.resolution*2*self.samp)))
             else:
-                self.PSF[:,:,:,j] = psf           
-
-        if self.overSampling > 1:
-            idx1 = self.fovInPixel//2 - self.fovInPixel//2//self.overSampling
-            idx2 = self.fovInPixel//2 + self.fovInPixel//2//self.overSampling
-            self.PSF = self.PSF[idx1:idx2,idx1:idx2,:,:]
-            
-        # GET THE WAVE FRONT ERROR BREAKDOWN
-        if getErrorBreakDown == True:
-            self.errorBreakDown()                
+                self.PSF = psf  
+                                
+            # GET METRICS
+            if getFWHM == True:
+                self.FWHM  = FourierUtils.getFWHM(self.PSF,self.psInMas,rebin=1,method='contour',nargout=2)
+            if getEnsquaredEnergy==True:
+                self.EnsqE   = 1e2*FourierUtils.getEnsquaredEnergy(self.PSF)
+            if getEncircledEnergy==True:
+                rr,radialprofile = FourierUtils.radial_profile(self.PSF[:,:,0,0])
+                self.EncE   = 1e2*FourierUtils.getEncircledEnergy(self.PSF)
+    
+        else:
+            self.PSD   = self.powerSpectrumDensity() 
+            self.PSF = np.zeros((self.fovInPixel,self.fovInPixel,self.nSrc,self.nWvl))
+            self.SR  = np.zeros((self.nSrc,self.nWvl))
         
-        # GET METRICS
-        if getFWHM == True or getEnsquaredEnergy==True or getEncircledEnergy==True:
-            self.getPsfMetrics(getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy,getFWHM=getFWHM)
+            
+        
+            # DEFINE THE FFT PHASOR AND MULTIPLY TO THE TELESCOPE OTF
+            if fftphasor:
+                # FOURIER PHASOR
+                uu =  fft.fftshift(fft.fftfreq(self.fovInPixel))  
+                ux,uy = np.meshgrid(uu,uu)
+                self.fftPhasor = np.exp(-complex(0,1)*np.pi*(ux + uy))
+            else:
+                self.fftPhasor = 1
+            kernel = self.otfTel * self.fftPhasor      
+            kernel = np.repeat(kernel[:,:,np.newaxis],self.nSrc,axis=2)     
+            S     = self.otfTel.sum()
+        
+            # GET THE AO RESIDUAL PHASE STRUCTURE FUNCTION    
+            cov = fft.fftshift(fft.fftn(fft.fftshift(self.PSD,axes=(0,1)),axes=(0,1)),axes=(0,1))
+            sf  = (2*cov.max(axis=(0,1)) - cov - np.conj(cov))
+        
+            # LOOP ON WAVELENGTHS   
+            for j in range(self.nWvl):
+                # GET THE AO RESIDUAL OTF
+                otfTurb     = np.exp(-0.5*sf*(2*np.pi*1e-9/self.wvlSrc[j])**2)
+                otfTot      = fft.fftshift(otfTurb * kernel,axes=(0,1))
+                self.SR[:,j]= 1e2*np.abs(otfTot).sum(axis=(0,1))/S
+                
+                # GET THE FINAL PSF
+                psf = np.real(fft.fftshift(fft.ifftn(otfTot,axes=(0,1)),axes = (0,1)))
+                if self.samp <1:
+                    self.PSF[:,:,:,j] = FourierUtils.interpolateSupport(psf,round(self.resolution*2*self.samp).astype('int'))
+                else:
+                    self.PSF[:,:,:,j] = psf           
+    
+            if self.overSampling > 1:
+                idx1 = self.fovInPixel//2 - self.fovInPixel//2//self.overSampling
+                idx2 = self.fovInPixel//2 + self.fovInPixel//2//self.overSampling
+                self.PSF = self.PSF[idx1:idx2,idx1:idx2,:,:]
+                
+            # GET THE WAVE FRONT ERROR BREAKDOWN
+            if getErrorBreakDown == True:
+                self.errorBreakDown()                
+            
+            # GET METRICS
+            if getFWHM == True or getEnsquaredEnergy==True or getEncircledEnergy==True:
+                self.getPsfMetrics(getEnsquaredEnergy=getEnsquaredEnergy,getEncircledEnergy=getEncircledEnergy,getFWHM=getFWHM)
         
         self.t_getPSF = 1000*(time.time() - tstart)
         
@@ -1062,76 +1091,82 @@ class fourierModel:
         """
         """
         tstart  = time.time()
-        deg2rad = np.pi/180
-        # GEOMETRY
-        plt.figure()
-        plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation (arcsec)')
-        plt.polar(self.azimuthGs*deg2rad,self.zenithGs,'bs',markersize=7,label='GS position')
-        plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
-        plt.legend(bbox_to_anchor=(1.05, 1))
-           
-        # PSFs
-        if np.any(self.PSF):   
-            nmin = self.zenithSrc.argmin()
-            nmax = self.zenithSrc.argmax()
+        
+        if self.PSF.ndim == 2:
             plt.figure()
-            if self.PSF.shape[2] >1 and self.PSF.shape[3] == 1:             
-                plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[nmin],self.zenithSrc[nmax]))
-                P = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
-            elif self.PSF.shape[2] >1 and self.PSF.shape[3] >1:
-                plt.title("PSFs at {:.0f} and {:.0f} arcsec from center\n - Top: {:.0f}nm - Bottom:{:.0f} nm".format(self.zenithSrc[0],self.zenithSrc[-1],1e9*self.wvlSrc[0],1e9*self.wvlSrc[-1]))
-                P1 = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
-                P2 = np.concatenate((self.PSF[:,:,nmin,-1],self.PSF[:,:,nmax,-1]),axis=1)
-                P  = np.concatenate((P1,P2),axis=0)
-            else:
-                plt.title('PSF')
-                P = self.PSF[:,:,nmin,0]
-            plt.imshow(np.log10(np.abs(P)))
+            plt.imshow(np.log10(np.abs(self.PSF)))   
+            
+        else:
+            deg2rad = np.pi/180
+            # GEOMETRY
+            plt.figure()
+            plt.polar(self.azimuthSrc*deg2rad,self.zenithSrc,'ro',markersize=7,label='PSF evaluation (arcsec)')
+            plt.polar(self.azimuthGs*deg2rad,self.zenithGs,'bs',markersize=7,label='GS position')
+            plt.polar(self.azimuthOpt*deg2rad,self.zenithOpt,'kx',markersize=10,label='Optimization directions')
+            plt.legend(bbox_to_anchor=(1.05, 1))
+               
+            # PSFs
+            if np.any(self.PSF):   
+                nmin = self.zenithSrc.argmin()
+                nmax = self.zenithSrc.argmax()
+                plt.figure()
+                if self.PSF.shape[2] >1 and self.PSF.shape[3] == 1:             
+                    plt.title("PSFs at {:.1f} and {:.1f} arcsec from center".format(self.zenithSrc[nmin],self.zenithSrc[nmax]))
+                    P = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
+                elif self.PSF.shape[2] >1 and self.PSF.shape[3] >1:
+                    plt.title("PSFs at {:.0f} and {:.0f} arcsec from center\n - Top: {:.0f}nm - Bottom:{:.0f} nm".format(self.zenithSrc[0],self.zenithSrc[-1],1e9*self.wvlSrc[0],1e9*self.wvlSrc[-1]))
+                    P1 = np.concatenate((self.PSF[:,:,nmin,0],self.PSF[:,:,nmax,0]),axis=1)
+                    P2 = np.concatenate((self.PSF[:,:,nmin,-1],self.PSF[:,:,nmax,-1]),axis=1)
+                    P  = np.concatenate((P1,P2),axis=0)
+                else:
+                    plt.title('PSF')
+                    P = self.PSF[:,:,nmin,0]
+                plt.imshow(np.log10(np.abs(P)))
         
            
-        if displayContour == True and np.any(self.SR) and self.SR.size > 1:
-            self.displayPsfMetricsContours(eeRadiusInMas=eeRadiusInMas)
-        else:
-            # STREHL-RATIO
-            if np.any(self.SR) and self.SR.size > 1:
-                plt.figure()
-                plt.plot(self.zenithSrc,self.SR[:,0],'bo',markersize=10)
-                plt.xlabel("Off-axis distance")
-                plt.ylabel("Strehl-ratio at {:.1f} nm (percents)".format(self.wvlSrc[0]*1e9))
-                plt.show()
-  
-            # FWHM
-            if np.any(self.FWHM) and self.FWHM.size > 1:
-                plt.figure()
-                plt.plot(self.zenithSrc,0.5*(self.FWHM[0,:,0]+self.FWHM[1,:,0]),'bo',markersize=10)
-                plt.xlabel("Off-axis distance")
-                plt.ylabel("Mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
-                plt.show()
-         
-            # Ensquared energy
-            if np.any(self.EnsqE):
-                nntrue      = eeRadiusInMas/self.psInMas
-                nn2         = int(nntrue)
-                EEmin       = self.EnsqE[nn2,:,0]
-                EEmax       = self.EnsqE[nn2+1,:,0]
-                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
-                plt.figure()
-                plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
-                plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eeRadiusInMas,self.wvlSrc[0]*1e9))
-                plt.show()
-
-            if np.any(self.EncE):
-                nntrue      = eeRadiusInMas/self.psInMas
-                nn2         = int(nntrue)
-                EEmin       = self.EncE[nn2,:,0]
-                EEmax       = self.EncE[nn2+1,:,0]
-                EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
-                plt.figure()
-                plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
-                plt.xlabel("Off-axis distance")
-                plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eeRadiusInMas*2,self.wvlSrc[0]*1e9))
-                plt.show()
+            if displayContour == True and np.any(self.SR) and self.SR.size > 1:
+                self.displayPsfMetricsContours(eeRadiusInMas=eeRadiusInMas)
+            else:
+                # STREHL-RATIO
+                if np.any(self.SR) and self.SR.size > 1:
+                    plt.figure()
+                    plt.plot(self.zenithSrc,self.SR[:,0],'bo',markersize=10)
+                    plt.xlabel("Off-axis distance")
+                    plt.ylabel("Strehl-ratio at {:.1f} nm (percents)".format(self.wvlSrc[0]*1e9))
+                    plt.show()
+      
+                # FWHM
+                if np.any(self.FWHM) and self.FWHM.size > 1:
+                    plt.figure()
+                    plt.plot(self.zenithSrc,0.5*(self.FWHM[0,:,0]+self.FWHM[1,:,0]),'bo',markersize=10)
+                    plt.xlabel("Off-axis distance")
+                    plt.ylabel("Mean FWHM at {:.1f} nm (mas)".format(self.wvlSrc[0]*1e9))
+                    plt.show()
+             
+                # Ensquared energy
+                if np.any(self.EnsqE):
+                    nntrue      = eeRadiusInMas/self.psInMas
+                    nn2         = int(nntrue)
+                    EEmin       = self.EnsqE[nn2,:,0]
+                    EEmax       = self.EnsqE[nn2+1,:,0]
+                    EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
+                    plt.figure()
+                    plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
+                    plt.xlabel("Off-axis distance")
+                    plt.ylabel("{:f}-mas-side Ensquared energy at {:.1f} nm (percents)".format(eeRadiusInMas,self.wvlSrc[0]*1e9))
+                    plt.show()
+    
+                if np.any(self.EncE):
+                    nntrue      = eeRadiusInMas/self.psInMas
+                    nn2         = int(nntrue)
+                    EEmin       = self.EncE[nn2,:,0]
+                    EEmax       = self.EncE[nn2+1,:,0]
+                    EEtrue      = (nntrue - nn2)*EEmax + (nn2+1-nntrue)*EEmin
+                    plt.figure()
+                    plt.plot(self.zenithSrc,EEtrue,'bo',markersize=10)
+                    plt.xlabel("Off-axis distance")
+                    plt.ylabel("{:f}-mas-diameter Encircled energy at {:.1f} nm (percents)".format(eeRadiusInMas*2,self.wvlSrc[0]*1e9))
+                    plt.show()
         
         self.t_displayResults = 1000*(time.time() - tstart)
             
@@ -1208,30 +1243,33 @@ class fourierModel:
         print("Required time for total calculation (ms)\t : {:f}".format(self.t_init))
         print("Required time for getting parameters (ms)\t : {:f}".format(self.t_getParam))
         # Reconstructors
-        if self.nGs == 1:
-            print("Required time for reconstructors init (ms)\t : {:f}".format(self.t_reconstructor))
-        else:
-            print("Required time for optimization init (ms)\t : {:f}".format(self.t_finalReconstructor))
-            print("Required time for tomography init (ms)\t\t : {:f}".format(self.t_tomo))
-            print("Required time for optimization init (ms)\t : {:f}".format(self.t_opt))
-        # Controller
-        print("Required time for controller instantiation (ms)\t : {:f}".format(self.t_controller))
-        # PSD
-        print("Required time for final PSD calculation (ms)\t : {:f}".format(self.t_powerSpectrumDensity))
-        print("Required time for fitting PSD calculation (ms)\t : {:f}".format(self.t_fittingPSD))
-        print("Required time for aliasing PSD calculation (ms)\t : {:f}".format(self.t_aliasingPSD))
-        print("Required time for noise PSD calculation (ms)\t : {:f}".format(self.t_noisePSD))
-        print("Required time for ST PSD calculation (ms)\t : {:f}".format(self.t_spatioTemporalPSD))
+        if self.loopGain > 0:
+            if self.nGs == 1:
+                print("Required time for reconstructors init (ms)\t : {:f}".format(self.t_reconstructor))
+            else:
+                print("Required time for optimization init (ms)\t : {:f}".format(self.t_finalReconstructor))
+                print("Required time for tomography init (ms)\t\t : {:f}".format(self.t_tomo))
+                print("Required time for optimization init (ms)\t : {:f}".format(self.t_opt))
+            # Controller
+            print("Required time for controller instantiation (ms)\t : {:f}".format(self.t_controller))
+            # PSD
+            print("Required time for final PSD calculation (ms)\t : {:f}".format(self.t_powerSpectrumDensity))
+            print("Required time for fitting PSD calculation (ms)\t : {:f}".format(self.t_fittingPSD))
+            print("Required time for aliasing PSD calculation (ms)\t : {:f}".format(self.t_aliasingPSD))
+            print("Required time for noise PSD calculation (ms)\t : {:f}".format(self.t_noisePSD))
+            print("Required time for ST PSD calculation (ms)\t : {:f}".format(self.t_spatioTemporalPSD))
+            
+            # Error breakdown
+            if self.getErrorBreakDown:
+                print("Required time for error calculation (ms)\t : {:f}".format(self.t_errorBreakDown))
+                
+            # PSF metrics
+            if self.getPSFmetrics:
+                print("Required time for get PSF metrics (ms)\t\t : {:f}".format(self.t_getPsfMetrics))
+            
+            # Display
+            if self.display and self.calcPSF:
+                print("Required time for displaying figures (ms)\t : {:f}".format(self.t_displayResults))
+                
         if self.calcPSF:
             print("Required time for all PSFs calculation (ms)\t : {:f}".format(self.t_getPSF))
-        # Error breakdown
-        if self.getErrorBreakDown:
-            print("Required time for error calculation (ms)\t : {:f}".format(self.t_errorBreakDown))
-            
-        # PSF metrics
-        if self.getPSFmetrics:
-            print("Required time for get PSF metrics (ms)\t\t : {:f}".format(self.t_getPsfMetrics))
-        
-        # Display
-        if self.display and self.calcPSF:
-            print("Required time for displaying figures (ms)\t : {:f}".format(self.t_displayResults))
