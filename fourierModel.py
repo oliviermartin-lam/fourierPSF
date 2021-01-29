@@ -193,7 +193,6 @@ class fourierModel:
             if self.loopGain == 0:
                 self.getPSF(verbose=verbose,getFWHM=getFWHM,getEnsquaredEnergy=getEnsquaredEnergy,\
                                 getEncircledEnergy=getEncircledEnergy)
-                    
             else:
             # ----------------- CLOSED-LOOP CASE ---------------------------- #
                 # DEFINE THE AO CORRECTION and PSF HALO  REGIONS
@@ -224,10 +223,9 @@ class fourierModel:
                 else:
                     self.psd = self.powerSpectrumDensity()
                     
-                if verbose:
-                    self.displayExecutionTime()
-            
         self.t_init = 1000*(time.time()  - tstart)
+        if verbose:
+            self.displayExecutionTime()
           
     def __repr__(self):
         s = "Fourier Model class "
@@ -348,6 +346,9 @@ class fourierModel:
         # Note : so far, the WFSs have all the same exposure time
         self.latency        = eval(config['SENSOR_HO']['loopDelaySteps_HO'])*self.samplingTime
         self.wvlGs          = eval(config['SENSOR_HO']['SensingWavelength_HO'])
+        self.wfstype        = eval(config['SENSOR_HO']['wfstype'])
+        self.modulation     = eval(config['SENSOR_HO']['modulation'])
+        self.binning        = eval(config['SENSOR_HO']['binning'])
         self.nLenslet_HO    = eval(config['SENSOR_HO']['nLenslet_HO'])
         self.nph_HO         = eval(config['SENSOR_HO']['nph_HO'])
         self.pixel_Scale_HO = eval(config['SENSOR_HO']['pixel_scale_HO'])
@@ -464,24 +465,36 @@ class fourierModel:
         tstart = time.time()
         # reconstructor derivation
         i           = complex(0,1)
-        d           = self.pitchs_wfs[0]   
-        Sx          = 2*i*np.pi*self.kx*d
-        Sy          = 2*i*np.pi*self.ky*d                        
-        Av          = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
-        self.SxAv   = Sx*Av
-        self.SyAv   = Sy*Av
-        gPSD        = abs(self.SxAv)**2 + abs(self.SyAv)**2 + MV*self.Wn/self.Wphi
-        self.Rx     = np.conj(self.SxAv)/gPSD
-        self.Ry     = np.conj(self.SyAv)/gPSD
-                
+        d           = self.pitchs_wfs[0]               
+        if self.wfstype == 'shack-hartmann':
+            Sx          = 2*i*np.pi*self.kx*d
+            Sy          = 2*i*np.pi*self.ky*d                        
+            Av          = np.sinc(d*self.kx)*np.sinc(d*self.ky)*np.exp(i*np.pi*d*(self.kx+self.ky))        
+        elif self.wfstype == 'pyramid':
+            # forward pyramid filter (continuous) from Conan
+            umod    = 1/(2*d)/(self.nLenslet_HO/2)*self.modulation
+            Sx      = np.zeros((self.resAO,self.resAO),dtype=complex)
+            idx     = abs(self.kx) > umod
+            Sx[idx] = i*np.sign(self.kx[idx])
+            idx     = abs(self.kx) <= umod
+            Sx[idx] = 2*i/np.pi*np.arcsin(self.kx[idx]/umod)
+            Av      = np.sinc(self.binning*d*self.kx)*np.sinc(self.binning*d*self.kx).T
+            Sy      = Sx.T
+            
+        self.SxAv  = Sx*Av
+        self.SyAv  = Sy*Av
+        # MMSE
+        gPSD       = abs(self.SxAv)**2 + abs(self.SyAv)**2 + MV*self.Wn/self.Wphi
+        self.Rx    = np.conj(self.SxAv)/gPSD
+        self.Ry    = np.conj(self.SyAv)/gPSD
         # Manage NAN value if any   
         self.Rx[np.isnan(self.Rx)] = 0
         self.Ry[np.isnan(self.Ry)] = 0
-            
         # Set central point (i.e. kx=0,ky=0) to zero
         N = int(np.ceil((self.kx.shape[0]-1)/2))
         self.Rx[N,N] = 0
         self.Ry[N,N] = 0
+            
         self.t_reconstructor = 1000*(time.time()  - tstart)
         
     def tomographicReconstructor(self):
@@ -1020,8 +1033,6 @@ class fourierModel:
             self.PSD   = self.powerSpectrumDensity() 
             self.PSF = np.zeros((self.fovInPixel,self.fovInPixel,self.nSrc,self.nWvl))
             self.SR  = np.zeros((self.nSrc,self.nWvl))
-        
-            
         
             # DEFINE THE FFT PHASOR AND MULTIPLY TO THE TELESCOPE OTF
             if fftphasor:
