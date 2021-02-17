@@ -12,6 +12,9 @@ import re
 import FourierUtils
 
     
+class Attribute(object):
+    pass
+
 class telescope:
     """ Telescope class that defines the telescope characteristics.
     Inputs are:

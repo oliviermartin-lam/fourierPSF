@@ -346,9 +346,15 @@ class fourierModel:
         # Note : so far, the WFSs have all the same exposure time
         self.latency        = eval(config['SENSOR_HO']['loopDelaySteps_HO'])*self.samplingTime
         self.wvlGs          = eval(config['SENSOR_HO']['SensingWavelength_HO'])
-        self.wfstype        = eval(config['SENSOR_HO']['wfstype'])
-        self.modulation     = eval(config['SENSOR_HO']['modulation'])
-        self.binning        = eval(config['SENSOR_HO']['binning'])
+        if config.has_option('SENSOR_HO', 'wfstype'):
+            self.wfstype    = eval(config['SENSOR_HO']['wfstype'])
+            self.modulation = eval(config['SENSOR_HO']['modulation'])
+            self.binning    = eval(config['SENSOR_HO']['binning'])
+        else:
+            self.wfstype    = 'shack-hartmann'
+            self.modulation = None
+            self.binning    = None
+            
         self.nLenslet_HO    = eval(config['SENSOR_HO']['nLenslet_HO'])
         self.nph_HO         = eval(config['SENSOR_HO']['nph_HO'])
         self.pixel_Scale_HO = eval(config['SENSOR_HO']['pixel_scale_HO'])
@@ -1004,22 +1010,30 @@ class fourierModel:
         self.atm_mod.wvl= wvl
         
         if self.loopGain == 0: #open-loop-case
-            
+            self.PSF = np.zeros((self.fovInPixel,self.fovInPixel,self.nWvl))
+
             # Von-Kármánn PSD
             self.PSD = self.atm.spectrum(self.kExtxy) * FourierUtils.pistonFilter(self.tel.D,self.kExtxy) * (2*self.kc/self.resAO)**2 
             cov      = fft.fftshift(fft.fft2(fft.fftshift(self.PSD)))
             sf       = (2*cov.max() - cov - np.conj(cov))
-            otfTurb  = np.exp(-0.5*sf)
-            otfTot   = otfTurb * self.otfTel
-            self.SR  = 1e2*np.abs(otfTot).sum(axis=(0,1))/self.otfTel.sum()
-            # PSF
-            psf      = np.real(fft.fftshift(fft.ifft2(fft.fftshift(otfTot))))
             
-            if self.samp <1:
-                self.PSF = FourierUtils.interpolateSupport(psf,int(round(self.resolution*2*self.samp)))
-            else:
-                self.PSF = psf  
-                                
+            for j in range(self.nWvl):
+                otfTurb  = np.exp(-0.5*sf * (self.wvlRef/self.wvlSrc[j])**2)
+                otfTot   = otfTurb * self.otfTel
+                self.SR  = 1e2*np.abs(otfTot).sum(axis=(0,1))/self.otfTel.sum()
+                # PSF
+                psf      = np.real(fft.fftshift(fft.ifft2(fft.fftshift(otfTot))))
+            
+                if self.samp <1:
+                    self.PSF[:,:,j] = FourierUtils.interpolateSupport(psf,int(round(self.resolution*2*self.samp)))
+                else:
+                    self.PSF[:,:,j] = psf  
+                
+                if self.overSampling > 1:
+                    idx1 = self.fovInPixel//2 - self.fovInPixel//2//self.overSampling
+                    idx2 = self.fovInPixel//2 + self.fovInPixel//2//self.overSampling
+                    self.PSF = self.PSF[idx1:idx2,idx1:idx2,:]
+                
             # GET METRICS
             if getFWHM == True:
                 self.FWHM  = FourierUtils.getFWHM(self.PSF,self.psInMas,rebin=1,method='contour',nargout=2)

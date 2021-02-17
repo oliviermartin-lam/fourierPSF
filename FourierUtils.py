@@ -690,7 +690,7 @@ def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_gu
     aRatio      = np.max([FWHMx/FWHMy,FWHMy/FWHMx])
     
     if nargout == 1:
-        return np.hypot(FWHMx,FWHMy)
+        return 0.5 * (FWHMx+FWHMy)
     elif nargout == 2:
         return FWHMx,FWHMy
     elif nargout == 3:

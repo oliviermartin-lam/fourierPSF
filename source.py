@@ -9,6 +9,9 @@ Created on Sat Aug 18 14:21:41 2018
 import numpy as np
 import math
     
+class Attribute(object):
+    pass
+
 class source:
     """
     """
@@ -68,7 +71,7 @@ class source:
         # Vectorizes source properties
         test= lambda x: (x.size != self.nSrc)
         if test(wvl):
-            print('Select the first wavelength value out from the given inputs')
+            print('Vectorize the wavelength value to cope with the number of sources')
             self.wvl = self.wvl[0]*np.ones(self.nSrc)
         if self.height == math.inf:
             self.height = self.height*np.ones(self.nSrc)
