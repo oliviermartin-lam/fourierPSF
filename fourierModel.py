@@ -74,7 +74,7 @@ def demoMavisPSF():
 def demoHarmoniPSF():
     if sys.platform[0:3] == 'win':
         fao = fourierModel(os.getcwd()+"\parFile\harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
-                       getErrorBreakDown=False,getFWHM=False,getEncircledEnergy=False,getEnsquaredEnergy=False,displayContour=True)    
+                       getErrorBreakDown=True,getFWHM=True,getEncircledEnergy=True,getEnsquaredEnergy=False,displayContour=True)    
     else:
         fao = fourierModel(os.getcwd()+"/parFile/harmoniParams.ini",calcPSF=True,verbose=True,display=True,\
                        getErrorBreakDown=False,getFWHM=True,getEncircledEnergy=True,getEnsquaredEnergy=False,displayContour=True)    
@@ -222,7 +222,9 @@ class fourierModel:
                         self.displayResults(displayContour=displayContour)
                 else:
                     self.psd = self.powerSpectrumDensity()
-                    
+                    if self.getErrorBreakDown:
+                        self.errorBreakDown()
+                        
         self.t_init = 1000*(time.time()  - tstart)
         if verbose:
             self.displayExecutionTime()
@@ -388,7 +390,6 @@ class fourierModel:
                 self.ExcessNoiseFactor_HO = 1
                 
             self.noiseVariance  = self.ExcessNoiseFactor_HO*(self.wvlGs/self.wvlRef)**2 * (varRON + varShot)
-        
         #%% DM parameters
         self.h_dm           = np.array(eval(config['DM']['DmHeights']))
         self.pitchs_dm      = self.pitchScaling*np.array(eval(config['DM']['DmPitchs']))
@@ -792,7 +793,8 @@ class fourierModel:
                     psd[:,:,j] = self.mskIn_ * tmp[:,:,0,0]*self.pistonFilterIn_
         
         self.t_noisePSD = 1000*(time.time() - tstart)
-        return  psd*self.noiseGain*self.noiseVariance
+        # NOTE: the noise variance is the same for all WFS
+        return  psd*self.noiseGain * np.mean(self.noiseVariance)
     
     def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
