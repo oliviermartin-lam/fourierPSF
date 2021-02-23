@@ -2,7 +2,7 @@
 """
 Created on Wed Jun 17 01:17:43 2020
 
-@author: StBernard
+@author: omartin
 """
 # Libraries
 import numpy as np
@@ -11,6 +11,9 @@ import numpy.fft as fft
 import matplotlib.pyplot as plt
 from astropy.modeling import models, fitting
 import matplotlib as mpl
+import scipy.interpolate as interp        
+import scipy.ndimage as scnd
+
 #%%  FOURIER TOOLS
 
 def cov2sf(cov):
@@ -91,7 +94,12 @@ def pistonFilter(D,f,fm=0,fn=0):
         F     = np.pi*D*np.hypot(FX,FY)    
     else:
         F     = np.pi*D*f
-    return 1-(2*spc.j1(F)/F)**2
+        
+    out         = np.zeros_like(F)
+    idx         = F!=0
+    out[idx]    = spc.j1(F[idx])/F[idx]
+            
+    return 1 - 4 * out**2
              
 def psd2cov(psd,pixelScale):
     nPts = np.array(psd.shape)
@@ -125,18 +133,19 @@ def pupil2psf(pupil,phase,overSampling):
 def sf2otf(sf):
     return np.exp(-0.5 * sf)
                  
-def telescopeOtf(pupil,overSampling):    
-    extendedPup  = enlargeSupport(pupil,2*overSampling)
-    return fft.fftshift(fftCorrel(extendedPup,extendedPup))
+def telescopeOtf(pupil,samp):    
+    pup_pad  = enlargeSupport(pupil,samp)
+    otf      = fft.fftshift(fft.ifft2(fft.fft2(fft.fftshift(pup_pad))**2))
+    return otf/otf.max()
            
-def telescopePsf(pupil,overSampling,kind='spline'):
+def telescopePsf(pupil,samp,kind='spline'):
     nSize = np.array(pupil.shape)
     
-    if overSampling >=1:
-        otf = telescopeOtf(pupil,overSampling)
+    if samp >=2:
+        otf = telescopeOtf(pupil,samp)
         return otf2psf(interpolateSupport(otf,nSize,kind=kind))
     else:
-        otf = interpolateSupport(telescopeOtf(pupil,2),nSize/overSampling,kind=kind)
+        otf = interpolateSupport(telescopeOtf(pupil,2),nSize//samp,kind=kind)
         return interpolateSupport(otf2psf(otf),nSize,kind=kind)
 
 #%%  IMAGE PROCESSING
@@ -205,52 +214,63 @@ def enlargeSupport(im,n):
     
     return imNew
 
-def interpolateSupport(otf,nRes,kind='spline'):
-    # Define angular frequencies vectors
-    nx,ny = otf.shape
+def interpolateSupport(image,nRes,kind='spline'):
     
+    # Define angular frequencies vectors
+    nx,ny = image.shape
+        
     if np.isscalar(nRes):
         mx = my = nRes
     else:        
         mx = nRes[0]
         my = nRes[1]
-               
-    # Initial frequencies grid    
-    if nx%2 == 0:
-        uinit = np.linspace(-nx/2,nx/2-1,nx)*2/nx
-    else:
-        uinit = np.linspace(-np.floor(nx/2),np.floor(nx/2),nx)*2/nx
-    if ny%2 == 0:
-        vinit = np.linspace(-ny/2,ny/2-1,ny)*2/ny
-    else:
-        vinit = np.linspace(-np.floor(ny/2),np.floor(ny/2),ny)*2/ny    
-         
-    # Interpolated frequencies grid                  
-    if mx%2 == 0:
-        unew = np.linspace(-mx/2,mx/2-1,mx)*2/mx
-    else:
-        unew = np.linspace(-np.floor(mx/2),np.floor(mx/2),mx)*2/mx
-    if my%2 == 0:
-        vnew = np.linspace(-my/2,my/2-1,my)*2/my
-    else:
-        vnew = np.linspace(-np.floor(my/2),np.floor(my/2),my)*2/my
-               
-    # Interpolation
-    import scipy.interpolate as interp        
-
-    if kind == 'spline':
-        # Surprinsingly v and u vectors must be shifted when using
-        # RectBivariateSpline. See:https://github.com/scipy/scipy/issues/3164
-        tmpReal = interp.fitpack2.RectBivariateSpline(vinit, uinit, np.real(otf))
-        tmpImag = interp.fitpack2.RectBivariateSpline(vinit, uinit, np.imag(otf))
-    else:
-        tmpReal = interp.interp2d(uinit, vinit, np.real(otf),kind=kind)
-        tmpImag = interp.interp2d(uinit, vinit, np.imag(otf),kind=kind)
+                   
+            
+    if kind == 'nearest':
+        tmpReal = scnd.zoom(np.real(image),min([mx/nx,my/ny]),order=0)
+        if np.any(np.iscomplex(image)):
+            tmpImag = scnd.zoom(np.imag(image),min([mx/nx,my/ny]),order=0)
+            return tmpReal + complex(0,1)*tmpImag
+        else:
+            return tmpReal
+    else:        
+        
+        
+        # Initial frequencies grid    
+        if nx%2 == 0:
+            uinit = np.linspace(-nx/2,nx/2-1,nx)*2/nx
+        else:
+            uinit = np.linspace(-np.floor(nx/2),np.floor(nx/2),nx)*2/nx
+        if ny%2 == 0:
+            vinit = np.linspace(-ny/2,ny/2-1,ny)*2/ny
+        else:
+            vinit = np.linspace(-np.floor(ny/2),np.floor(ny/2),ny)*2/ny    
+             
+        # Interpolated frequencies grid                  
+        if mx%2 == 0:
+            unew = np.linspace(-mx/2,mx/2-1,mx)*2/mx
+        else:
+            unew = np.linspace(-np.floor(mx/2),np.floor(mx/2),mx)*2/mx
+        if my%2 == 0:
+            vnew = np.linspace(-my/2,my/2-1,my)*2/my
+        else:
+            vnew = np.linspace(-np.floor(my/2),np.floor(my/2),my)*2/my
+                   
+        # Interpolation
     
-    if np.any(np.iscomplex(otf)):
-        return tmpReal(unew,vnew) + complex(0,1)*tmpImag(unew,vnew)
-    else:
-        return tmpReal(unew,vnew)
+        if kind == 'spline':
+            # Surprinsingly v and u vectors must be shifted when using
+            # RectBivariateSpline. See:https://github.com/scipy/scipy/issues/3164
+            tmpReal = interp.fitpack2.RectBivariateSpline(vinit, uinit, np.real(image))
+            tmpImag = interp.fitpack2.RectBivariateSpline(vinit, uinit, np.imag(image))
+        else:
+            tmpReal = interp.interp2d(uinit, vinit, np.real(image),kind=kind)
+            tmpImag = interp.interp2d(uinit, vinit, np.imag(image),kind=kind)
+    
+        if np.any(np.iscomplex(image)):
+            return tmpReal(unew,vnew) + complex(0,1)*tmpImag(unew,vnew)
+        else:
+            return tmpReal(unew,vnew)
             
 
 
@@ -453,7 +473,7 @@ def getEncircledEnergy(psf,pixelscale=1,nargout=1):
 
 
 def radial_profile(image, ext=0, pixelscale=1,ee=False, center=None, stddev=False, binsize=None, maxradius=None,
-                   normalize='None', pa_range=None, slice=0):
+                   normalize='None', pa_range=None, slice=0,nargout=2):
     """ Compute a radial profile of the image.
 
     This computes a discrete radial profile evaluated on the provided binsize. For a version
@@ -569,6 +589,9 @@ def radial_profile(image, ext=0, pixelscale=1,ee=False, center=None, stddev=Fals
             stddevs[i] = np.nanstd(image[wg])
         return rr, stddevs
 
+    if nargout == 1:
+        return radialprofile2
+    
     if not ee:
         return rr, radialprofile2
     else:
@@ -698,18 +721,26 @@ def getFWHM(psf,pixelScale,rebin=1,method='contour',nargout=2,center=None,std_gu
     elif nargout == 4:
         return FWHMx,FWHMy,aRatio,theta
                           
-def getStrehl(psf0,pupil,overSampling):    
-    psf     = centerPsf(psf0,2)
+def getStrehl(psf0,pupil,samp,recentering=False):
+    if recentering:    
+        psf = centerPsf(psf0,2)
+    else:
+        psf = psf0
+        
     #% Get the OTF
     otf     = abs(fft.fftshift(psf2otf(psf)))
     otf     = otf/otf.max()
     notf    = np.array(otf.shape)
+    
     # Get the Diffraction-limit OTF
-    otfDL   = abs(telescopeOtf(pupil,overSampling))
+    nX,nY   = pupil.shape
+    pup_pad = enlargeSupport(pupil,samp)
+    otfDL   = fft.fftshift(abs(fft.ifft2(fft.fft2(fft.fftshift(pup_pad))**2)/pupil.sum()))
     otfDL   = interpolateSupport(otfDL,notf)
     otfDL   = otfDL/otfDL.max()
+    
     # Get the Strehl
-    return np.trapz(np.trapz(otf))/np.trapz(np.trapz(otfDL))
+    return np.round(otf.sum()/otfDL.sum(),2)
 
 #%% Data treatment
     

@@ -367,21 +367,27 @@ class fourierModel:
             self.noiseVariance  = eval(config['SENSOR_HO']['noiseVariance_HO'])
             self.noiseVariance = self.noiseVariance * np.ones(self.nGs)    
         else:
-            self.Npix_per_subap_HO = int(self.resolution/self.nLenslet_HO)
+            self.Npix_per_subap_HO = eval(config['SENSOR_HO']['Npix_per_subap_HO'])#int(self.resolution/self.nLenslet_HO)
             if self.pixel_Scale_HO > 1: # put the value in arcsec
                     self.pixel_Scale_HO = self.pixel_Scale_HO/1e3
-            self.ND             = self.wvlGs/self.pitchs_wfs*rad2arcsec/self.pixel_Scale_HO #spot FWHM in pixels and without turbulence
-            varRON              = np.pi**2/3*(self.sigmaRON_HO /self.nph_HO)**2*(self.Npix_per_subap_HO**2/self.ND)**2
+            self.ND = rad2arcsec * self.wvlGs/self.pitchs_wfs/self.pixel_Scale_HO #spot FWHM in pixels and without turbulence
+            varRON  = np.pi**2/3*(self.sigmaRON_HO**2 /self.nph_HO**2) * (self.Npix_per_subap_HO**2/self.ND)**2
             if varRON.any() > 3:
                 print('The read-out noise variance is very high (%.1f >3 rd^2), there is certainly smth wrong with your inputs, set to 0'%(varRON))
                 varRON = 0
                 
-            self.NT             = self.wvlGs/self.r0*(self.wvlGs/self.wvlAtm)**1.2 * rad2arcsec/self.pixel_Scale_HO
-            varShot             = np.pi**2/(2*self.nph_HO)*(self.NT/self.ND)**2
+            self.NT  = rad2arcsec*self.wvlGs/(self.r0*(self.wvlGs/self.wvlAtm)**1.2)/self.pixel_Scale_HO
+            varShot  = np.pi**2/(2*self.nph_HO)*(self.NT/self.ND)**2
             if varShot.any() > 3:
                 print('The shot noise variance is very high (%.1f >3 rd^2), there is certainly smth wrong with your inputs, set to 0'%(varShot))
                 varShot = 0
-            self.noiseVariance  = (self.wvlGs/self.wvlRef)**2 * (varRON + varShot)
+                
+            if config.has_option('SENSOR_HO', 'ExcessNoiseFactor_HO'):
+                self.ExcessNoiseFactor_HO = eval(config['SENSOR_HO']['ExcessNoiseFactor_HO'])
+            else:
+                self.ExcessNoiseFactor_HO = 1
+                
+            self.noiseVariance  = self.ExcessNoiseFactor_HO*(self.wvlGs/self.wvlRef)**2 * (varRON + varShot)
         
         #%% DM parameters
         self.h_dm           = np.array(eval(config['DM']['DmHeights']))
@@ -773,12 +779,12 @@ class fourierModel:
         tstart  = time.time()
         if self.noiseVariance[0] > 0:
             if self.nGs < 2:        
-                psd = np.zeros((self.resAO,self.resAO),dtype=complex)
-                psd = self.noiseVariance/(2*self.kc)**2*(abs(self.Rx)**2 + abs(self.Ry**2))
+                psd = abs(self.Rx**2 + self.Ry**2)
+                #psd = psd #(/(2*self.kc)**2)
                 psd = self.mskIn_ * psd*self.pistonFilterIn_
             else:  
                 psd = np.zeros((self.resAO,self.resAO,self.nSrc),dtype=complex)
-                #PbetaDM = self.PbetaDMj
+                #where is the noise level ?
                 for j in range(self.nSrc):
                     PW      = np.matmul(self.PbetaDM[j],self.W)
                     PW_t    = np.conj(PW.transpose(0,1,3,2))
@@ -786,7 +792,7 @@ class fourierModel:
                     psd[:,:,j] = self.mskIn_ * tmp[:,:,0,0]*self.pistonFilterIn_
         
         self.t_noisePSD = 1000*(time.time() - tstart)
-        return  psd*self.noiseGain
+        return  psd*self.noiseGain*self.noiseVariance
     
     def servoLagPSD(self):
         """ SERVOLAGPSD Servo-lag power spectrum density
@@ -827,7 +833,7 @@ class fourierModel:
                 if any(th):
                     A = np.zeros((self.resAO,self.resAO))
                     for l in range(self.atm.nL):                
-                        A   = A + Ws[l]*np.exp(2*i*np.pi*Hs[l]*(self.kx*th[0] + self.ky*th[1]))            
+                        A   = A + Ws[l]*np.exp(2*i*np.pi*Hs[l]*(self.kx*th[1] + self.ky*th[0]))            
                 else:
                     A = np.ones((self.resAO,self.resAO))
           
@@ -868,7 +874,7 @@ class fourierModel:
             if any(th):
                 A = np.zeros((self.resAO,self.resAO))
                 for l in range(self.atm.nL):
-                    A   = A + 2*Ws[l]*(1 - np.cos(2*np.pi*Hs[l]*(self.kx*th[0] + self.ky*th[1])))             
+                    A   = A + 2*Ws[l]*(1 - np.cos(2*np.pi*Hs[l]*(self.kx*th[1] + self.ky*th[0])))             
                 psd[:,:,s] = A*Watm
         self.t_anisoplanatismPSD = 1000*(time.time() - tstart)
         return self.mskIn_ * np.real(psd)

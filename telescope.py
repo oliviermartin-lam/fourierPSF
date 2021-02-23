@@ -63,19 +63,18 @@ class telescope:
         self.file      = file
         # PUPIL DEFINITION        
         import os.path as ospath
+        
+        pupil = [] 
         if file!=[] and ospath.isfile(file) == True:
             self.verb = True
             if  re.search(".fits",file)!=None :
-                obj = fits.open(file)
-                im = obj[1].data
-                hdr = obj[1].header
-                self.pupil = im
-                obj.close()
-                
-                if hdr[3]!=resolution:
-                    self.pupil = FourierUtils.interpolateSupport(self.pupil,resolution,kind='linear')
+                pupil = fits.getdata(file)
+                #pupil = pupil * (pupil>=1)
+                if pupil.shape[0] != resolution:
+                    pupil = FourierUtils.interpolateSupport(pupil,resolution,kind='nearest')
+                self.pupil = pupil
         
-        if (file == [] or obj == []):
+        if len(pupil) ==0:
             x   = np.linspace(-D/2,D/2,resolution)
             X,Y = np.meshgrid(x,x)
             R   = np.hypot(X,Y)

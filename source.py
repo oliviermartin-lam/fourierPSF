@@ -33,7 +33,7 @@ class source:
         return 2*np.pi/self.wvl
         
     # CONSTRUCTOR
-    def __init__(self,wvl,zenith,azimuth,height=math.inf,nSource=1,types="SOURCE",verbose=False):
+    def __init__(self,wvl,zenith,azimuth,height=0,nSource=1,types="SOURCE",verbose=False):
        
         # Vectorizing inputs is required  
         if np.isscalar(wvl):
@@ -73,8 +73,10 @@ class source:
         if test(wvl):
             print('Vectorize the wavelength value to cope with the number of sources')
             self.wvl = self.wvl[0]*np.ones(self.nSrc)
-        if self.height == math.inf:
+        if self.height != 0:
             self.height = self.height*np.ones(self.nSrc)
+        else:
+            self.height = np.zeros(self.nSrc)
     
         # Put into array format
         self.wvl       = np.array(self.wvl)
