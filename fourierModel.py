@@ -926,6 +926,70 @@ class fourierModel:
         self.t_tomographyPSD = 1000*(time.time() - tstart)
         return psd*self.pistonFilterIn_
     
+    def differentialRefractionPSD(self):
+        def refractionIndex(wvl,nargout=1):
+            ''' Refraction index -1 as a fonction of the wavelength. 
+            Valid for lambda between 0.2 and 4µm with 1 atm of pressure and 15 degrees Celsius
+                Inputs : wavelength in meters
+                Outputs : n-1 and dn/dwvl
+            '''
+            c1 = 64.328
+            c2 = 29498.1
+            c3 = 146.0
+            c4 = 255.4
+            c5 = 41.0
+            wvlRef = wvl*1e6
+            
+            nm1 = 1e-6 * (c1 +  c2/(c3-1.0/wvlRef**2) + c4/(c5 - 1.0/wvlRef**2) )
+            dndw= -2e-6 * (c1 +  c2/(c3-1.0/wvlRef**2)**2 + c4/(c5 - 1.0/wvlRef**2)**2 )/wvlRef**3
+            if nargout == 1:
+                return nm1    
+            else:
+                return (nm1,dndw)
+            
+        def refractiveAnisoplanatism(zenithAngle,wvl):
+            ''' Calculate the angular shift due to the atmospheric refraction at wvl
+            and for a zenith angle zenithAngle in rad
+            '''
+            return refractionIndex(wvl) * np.tan(zenithAngle)
+        
+        def differentialRefractiveAnisoplanatism(zenithAngle,wvlGs,wvlSrc):
+            return (refractionIndex(wvlSrc) - refractionIndex(wvlGs)) * np.tan(zenithAngle)
+    
+        tstart  = time.time()
+        
+        psd= np.zeros((self.resAO,self.resAO,self.nSrc))
+        if self.zenith_angle != 0:
+            Hs   = self.atm.heights
+            Ws   = self.atm.weights
+            Watm = self.Wphi * self.pistonFilterIn_     
+            A    = 0
+            k    = self.kxy
+            arg_k= np.arctan2(self.ky,self.kx)
+            azimuth = self.azimuthSrc
+        
+        
+            for s in range(self.nSrc):
+                theta = differentialRefractiveAnisoplanatism(self.zenith_angle*np.pi/180,self.wvlGs, self.wvlSrc[s])
+                for l in range(self.atm.nL):
+                    A   = A + 2*Ws[l]*(1 - np.cos(2*np.pi*Hs[l]*k*np.tan(theta)*np.cos(arg_k-azimuth)))            
+                psd[:,:,s] = self.mskIn_ *A*Watm
+         
+        self.t_differentialRefractionPSD = 1000*(time.time() - tstart)
+        return  psd
+      
+    def chromatismPSD(self):
+        tstart  = time.time()
+        Watm = self.Wphi * self.pistonFilterIn_   
+        psd= np.zeros((self.resAO,self.resAO,self.nSrc))
+        n2 =  23.7+6839.4/(130-(self.wvlGs*1.e6)**(-2))+45.47/(38.9-(self.wvlGs*1.e-6)**(-2))
+        for s in range(self.nSrc):
+            n1 =  23.7+6839.4/(130-(self.wvlSrc[s]*1.e6)**(-2))+45.47/(38.9-(self.wvlSrc[s]*1.e6)**(-2))     
+            psd[:,:,s] = ((n2-n1)/n2)**2 * Watm
+       
+        self.t_chromatismPSD = 1000*(time.time() - tstart)
+        return psd
+    
     def powerSpectrumDensity(self):
         """ POWER SPECTRUM DENSITY AO system power spectrum density
         """
@@ -947,6 +1011,13 @@ class fourierModel:
         self.psdAlias           = np.real(self.aliasingPSD())
         psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + np.repeat(self.psdAlias[:, :, np.newaxis], self.nSrc, axis=2)
         
+        # Differential refractive anisoplanatism
+        self.psdDiffRef         = self.differentialRefractionPSD()
+        psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + self.psdDiffRef
+        
+        # Chromatism
+        self.psdChromatism      = self.chromatismPSD()
+        psd[id1:id2,id1:id2,:]  = psd[id1:id2,id1:id2,:] + self.psdChromatism
         
         # Add the noise and spatioTemporal PSD
         self.psdSpatioTemporal  = np.real(self.spatioTemporalPSD())
@@ -970,6 +1041,8 @@ class fourierModel:
         self.wfeAl  = np.sqrt(self.psdAlias.sum()) * rad2nm
         self.wfeN   = np.sqrt(self.psdNoise.sum(axis=(0,1)))* rad2nm
         self.wfeST  = np.sqrt(self.psdSpatioTemporal.sum(axis=(0,1)))* rad2nm
+        self.wfeDiffRef= np.sqrt(self.psdDiffRef.sum(axis=(0,1)))* rad2nm
+        self.wfeChrom  = np.sqrt(self.psdChromatism.sum(axis=(0,1)))* rad2nm
         self.wfeTot = np.sqrt(self.wfeFit**2 + self.wfeAl**2 + self.wfeST**2 + self.wfeN**2)
         self.SRmar  = 100*np.exp(-(self.wfeTot*2*np.pi*1e-9/self.wvlSrc)**2)
         
@@ -982,6 +1055,9 @@ class fourierModel:
             print('.Maréchal Strehl at %4.2fmicron:\t%4.2f%s'%(self.atm.wvl*1e6,self.SRmar[idCenter],'%'))
             print('.Residual wavefront error:\t%4.2fnm'%self.wfeTot[idCenter])
             print('.Fitting error:\t\t\t%4.2fnm'%self.wfeFit)
+            print('.Differential refraction:\t\t%4.2fnm'%self.wfeDiffRef[idCenter])
+            print('.Chromatic error:\t\t%4.2fnm'%self.wfeChrom[idCenter])
+            np.sqrt(self.psdDiffRef.sum(axis=(0,1)))* rad2nm
             print('.Aliasing error:\t\t%4.2fnm'%self.wfeAl)
             if self.nGs == 1:
                 print('.Noise error:\t\t\t%4.2fnm'%self.wfeN)
