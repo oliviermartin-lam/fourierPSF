@@ -982,7 +982,7 @@ class fourierModel:
         tstart  = time.time()
         Watm = self.Wphi * self.pistonFilterIn_   
         psd= np.zeros((self.resAO,self.resAO,self.nSrc))
-        n2 =  23.7+6839.4/(130-(self.wvlGs*1.e6)**(-2))+45.47/(38.9-(self.wvlGs*1.e-6)**(-2))
+        n2 =  23.7+6839.4/(130-(self.wvlGs*1.e6)**(-2))+45.47/(38.9-(self.wvlGs*1.e6)**(-2))
         for s in range(self.nSrc):
             n1 =  23.7+6839.4/(130-(self.wvlSrc[s]*1.e6)**(-2))+45.47/(38.9-(self.wvlSrc[s]*1.e6)**(-2))     
             psd[:,:,s] = ((n2-n1)/n2)**2 * Watm
